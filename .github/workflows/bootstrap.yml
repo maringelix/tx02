@@ -3,9 +3,17 @@ name: Bootstrap - Setup Terraform Backend
 on:
   workflow_dispatch:
     inputs:
-      confirm:
-        description: 'Type "bootstrap" to confirm setup'
+      action:
+        description: 'Action to perform'
         required: true
+        type: choice
+        options:
+          - plan
+          - apply
+        default: 'plan'
+      confirm:
+        description: 'Type "bootstrap" to confirm (only for apply)'
+        required: false
 
 env:
   RESOURCE_GROUP: terraform-state-rg
@@ -14,15 +22,161 @@ env:
   LOCATION: eastus
 
 jobs:
+  plan:
+    name: Show What Will Be Created
+    runs-on: ubuntu-latest
+    if: github.event.inputs.action == 'plan'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Check if Resources Already Exist
+        id: check
+        run: |
+          echo "## 🔍 Checking Current State..." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Check Resource Group
+          if az group show --name ${{ env.RESOURCE_GROUP }} &>/dev/null; then
+            echo "RG_EXISTS=true" >> $GITHUB_OUTPUT
+            echo "⚠️ **Resource Group** \`${{ env.RESOURCE_GROUP }}\` **already exists**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "RG_EXISTS=false" >> $GITHUB_OUTPUT
+            echo "✅ Resource Group \`${{ env.RESOURCE_GROUP }}\` will be created" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Check Storage Account
+          if az storage account show --name ${{ env.STORAGE_ACCOUNT }} --resource-group ${{ env.RESOURCE_GROUP }} &>/dev/null; then
+            echo "SA_EXISTS=true" >> $GITHUB_OUTPUT
+            echo "⚠️ **Storage Account** \`${{ env.STORAGE_ACCOUNT }}\` **already exists**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "SA_EXISTS=false" >> $GITHUB_OUTPUT
+            echo "✅ Storage Account \`${{ env.STORAGE_ACCOUNT }}\` will be created" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Check Container
+          if az storage container show --name ${{ env.CONTAINER_NAME }} --account-name ${{ env.STORAGE_ACCOUNT }} &>/dev/null 2>&1; then
+            echo "CONTAINER_EXISTS=true" >> $GITHUB_OUTPUT
+            echo "⚠️ **Blob Container** \`${{ env.CONTAINER_NAME }}\` **already exists**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "CONTAINER_EXISTS=false" >> $GITHUB_OUTPUT
+            echo "✅ Blob Container \`${{ env.CONTAINER_NAME }}\` will be created" >> $GITHUB_STEP_SUMMARY
+          fi
+      
+      - name: Show Bootstrap Plan
+        run: |
+          echo "## 📋 Bootstrap Plan - Resources to be Created" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Setting | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Location | \`${{ env.LOCATION }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Resource Group | \`${{ env.RESOURCE_GROUP }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Storage Account | \`${{ env.STORAGE_ACCOUNT }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Container | \`${{ env.CONTAINER_NAME }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### 🏗️ Resources" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### 1. Resource Group" >> $GITHUB_STEP_SUMMARY
+          echo "- **Name**: \`${{ env.RESOURCE_GROUP }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Location**: \`${{ env.LOCATION }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tags**:" >> $GITHUB_STEP_SUMMARY
+          echo "  - Environment: shared" >> $GITHUB_STEP_SUMMARY
+          echo "  - Purpose: terraform-state" >> $GITHUB_STEP_SUMMARY
+          echo "  - ManagedBy: GitHub-Actions" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "#### 2. Storage Account" >> $GITHUB_STEP_SUMMARY
+          echo "- **Name**: \`${{ env.STORAGE_ACCOUNT }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **SKU**: Standard_LRS (Locally Redundant Storage)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Features**:" >> $GITHUB_STEP_SUMMARY
+          echo "  - ✅ Encryption at rest (AES-256)" >> $GITHUB_STEP_SUMMARY
+          echo "  - ✅ HTTPS only" >> $GITHUB_STEP_SUMMARY
+          echo "  - ✅ TLS 1.2 minimum" >> $GITHUB_STEP_SUMMARY
+          echo "  - ✅ Public access disabled" >> $GITHUB_STEP_SUMMARY
+          echo "  - ✅ Blob versioning enabled" >> $GITHUB_STEP_SUMMARY
+          echo "  - ✅ Soft delete (7 days)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "#### 3. Blob Container" >> $GITHUB_STEP_SUMMARY
+          echo "- **Name**: \`${{ env.CONTAINER_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Purpose**: Store Terraform state files" >> $GITHUB_STEP_SUMMARY
+          echo "- **Access**: Private (authenticated users only)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "#### 4. IAM Permissions" >> $GITHUB_STEP_SUMMARY
+          echo "- **Service Principal**: github-actions-tx02" >> $GITHUB_STEP_SUMMARY
+          echo "- **Role**: Storage Blob Data Contributor" >> $GITHUB_STEP_SUMMARY
+          echo "- **Scope**: Storage Account \`${{ env.STORAGE_ACCOUNT }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### 💰 Estimated Costs" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Resource | Estimated Cost/Month |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|---------------------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Storage Account (LRS) | ~\$2 USD |" >> $GITHUB_STEP_SUMMARY
+          echo "| Blob Storage (~1GB) | ~\$0.02 USD |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Total** | **~\$2.02 USD/month** |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### ⚡ Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "To apply this configuration:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Review the plan above" >> $GITHUB_STEP_SUMMARY
+          echo "2. Run this workflow again" >> $GITHUB_STEP_SUMMARY
+          echo "3. Select **apply** as action" >> $GITHUB_STEP_SUMMARY
+          echo "4. Type **bootstrap** in the confirmation field" >> $GITHUB_STEP_SUMMARY
+          echo "5. Click **Run workflow**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ **Note**: No resources will be created in PLAN mode." >> $GITHUB_STEP_SUMMARY
+      
+      - name: Check Subscription Credits
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 💳 Subscription Information" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          SUB_INFO=$(az account show --query "{Name:name, State:state, SubscriptionId:id}" -o json)
+          SUB_NAME=$(echo $SUB_INFO | jq -r '.Name')
+          SUB_STATE=$(echo $SUB_INFO | jq -r '.State')
+          SUB_ID=$(echo $SUB_INFO | jq -r '.SubscriptionId')
+          
+          echo "- **Name**: \`$SUB_NAME\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **ID**: \`$SUB_ID\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **State**: \`$SUB_STATE\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Bootstrap plan completed successfully!" >> $GITHUB_STEP_SUMMARY
+  
   bootstrap:
     name: Setup Terraform State Backend
     runs-on: ubuntu-latest
+    if: github.event.inputs.action == 'apply'
     
     steps:
       - name: Validate confirmation
         if: github.event.inputs.confirm != 'bootstrap'
         run: |
           echo "❌ Confirmation failed. You must type 'bootstrap' to proceed."
+          echo "## ❌ Bootstrap Apply Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Reason**: Confirmation text was not 'bootstrap'" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "To proceed:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Run the workflow again" >> $GITHUB_STEP_SUMMARY
+          echo "2. Select **apply** as action" >> $GITHUB_STEP_SUMMARY
+          echo "3. Type exactly: **bootstrap**" >> $GITHUB_STEP_SUMMARY
           exit 1
       
       - name: Checkout code
