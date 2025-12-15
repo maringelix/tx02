@@ -33,6 +33,9 @@ ssh_keys/
 secrets/
 *.env
 !.env.example
+CREDENTIALS_LOCAL.md
+*_CREDENTIALS*.md
+*.credentials
 
 # Backups
 backups/
