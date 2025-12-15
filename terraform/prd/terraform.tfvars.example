@@ -1,0 +1,40 @@
+# Projeto
+project_name = "tx02"
+environment  = "prd"
+location     = "eastus"
+
+# Rede
+vnet_address_space = ["10.1.0.0/16"]
+subnet_aks         = "10.1.1.0/24"
+subnet_database    = "10.1.2.0/24"
+subnet_vm          = "10.1.3.0/24"
+subnet_appgw       = "10.1.4.0/24"
+
+# AKS
+use_aks            = true
+aks_node_count     = 3
+aks_min_count      = 2
+aks_max_count      = 10
+aks_node_size      = "Standard_B2s"
+kubernetes_version = "1.32"
+
+# Database
+db_sku_name       = "B_Standard_B1ms"
+db_storage_gb     = 32
+db_version        = "17"
+db_admin_username = "dbadmin"
+db_name           = "dx02db"
+# db_password via TF_VAR_db_password
+
+# VM (modo desenvolvimento)
+vm_size           = "Standard_B2s"
+vm_admin_username = "azureuser"
+# vm_admin_password via TF_VAR_admin_password
+
+# Tags
+tags = {
+  Project     = "tx02"
+  ManagedBy   = "Terraform"
+  Environment = "production"
+  Repository  = "https://github.com/maringelix/tx02"
+}

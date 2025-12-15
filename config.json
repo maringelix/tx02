@@ -1,0 +1,46 @@
+{
+  "project": {
+    "name": "tx02",
+    "description": "Azure Infrastructure with Terraform and CI/CD",
+    "version": "1.0.0",
+    "cloud_provider": "azure",
+    "repository": "https://github.com/maringelix/tx02"
+  },
+  "environments": {
+    "production": {
+      "name": "prd",
+      "location": "eastus",
+      "kubernetes_version": "1.32",
+      "aks_node_count": 3,
+      "aks_node_size": "Standard_B2s",
+      "database_sku": "B_Standard_B1ms"
+    },
+    "staging": {
+      "name": "stg",
+      "location": "eastus",
+      "kubernetes_version": "1.32",
+      "aks_node_count": 2,
+      "aks_node_size": "Standard_B2s",
+      "database_sku": "B_Standard_B1ms"
+    }
+  },
+  "features": {
+    "aks": true,
+    "vm_mode": true,
+    "azure_database": true,
+    "application_gateway": true,
+    "monitoring": true,
+    "cicd": true,
+    "auto_scaling": true
+  },
+  "monitoring": {
+    "prometheus": true,
+    "grafana": true,
+    "azure_monitor": true
+  },
+  "deployment": {
+    "mode": "aks",
+    "auto_deploy": true,
+    "github_actions": true
+  }
+}

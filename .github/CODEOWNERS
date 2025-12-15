@@ -1,0 +1,16 @@
+# TX02 - Code Owners
+
+# Default owner for everything
+* @maringelix
+
+# Terraform infrastructure
+/terraform/ @maringelix
+
+# Kubernetes manifests
+/k8s/ @maringelix
+
+# GitHub Actions workflows
+/.github/workflows/ @maringelix
+
+# Documentation
+*.md @maringelix

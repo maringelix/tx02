@@ -1,0 +1,73 @@
+name: Destroy Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to destroy'
+        required: true
+        type: choice
+        options:
+          - prd
+          - stg
+      confirm:
+        description: 'Type "destroy" to confirm'
+        required: true
+
+env:
+  TF_VERSION: '1.6.0'
+
+jobs:
+  destroy:
+    name: Destroy Infrastructure
+    runs-on: ubuntu-latest
+    
+    environment:
+      name: ${{ github.event.inputs.environment }}
+    
+    steps:
+      - name: Validate confirmation
+        if: github.event.inputs.confirm != 'destroy'
+        run: |
+          echo "❌ Confirmation failed. You must type 'destroy' to proceed."
+          exit 1
+      
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Terraform Init
+        run: terraform init
+        working-directory: terraform/${{ github.event.inputs.environment }}
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      
+      - name: Terraform Destroy
+        run: terraform destroy -auto-approve
+        working-directory: terraform/${{ github.event.inputs.environment }}
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          TF_VAR_db_password: ${{ secrets.TF_VAR_db_password }}
+          TF_VAR_vm_admin_password: ${{ secrets.TF_VAR_admin_password }}
+      
+      - name: Summary
+        run: |
+          echo "## 🗑️ Infrastructure Destroyed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Destroyed at:** $(date)" >> $GITHUB_STEP_SUMMARY

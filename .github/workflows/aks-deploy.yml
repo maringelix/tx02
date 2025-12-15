@@ -1,0 +1,93 @@
+name: Deploy to AKS
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'prd'
+        type: choice
+        options:
+          - prd
+          - stg
+
+env:
+  AZURE_RESOURCE_GROUP: tx02-prd-rg
+  AKS_CLUSTER_NAME: tx02-prd-aks
+
+jobs:
+  deploy:
+    name: Deploy to AKS
+    runs-on: ubuntu-latest
+    
+    environment:
+      name: ${{ github.event.inputs.environment || 'prd' }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Set AKS context
+        uses: azure/aks-set-context@v3
+        with:
+          resource-group: ${{ env.AZURE_RESOURCE_GROUP }}
+          cluster-name: ${{ env.AKS_CLUSTER_NAME }}
+      
+      - name: Create namespace if not exists
+        run: |
+          kubectl create namespace dx02 --dry-run=client -o yaml | kubectl apply -f -
+      
+      - name: Create database secret
+        run: |
+          kubectl create secret generic dx02-db-secret \
+            --from-literal=host=${{ secrets.DB_HOST }} \
+            --from-literal=database=${{ secrets.DB_NAME }} \
+            --from-literal=username=${{ secrets.DB_USER }} \
+            --from-literal=password=${{ secrets.TF_VAR_db_password }} \
+            --namespace=dx02 \
+            --dry-run=client -o yaml | kubectl apply -f -
+      
+      - name: Deploy Kubernetes manifests
+        run: |
+          kubectl apply -f k8s/ -n dx02
+      
+      - name: Wait for deployment
+        run: |
+          kubectl rollout status deployment/dx02 -n dx02 --timeout=5m
+      
+      - name: Get service endpoint
+        id: get-endpoint
+        run: |
+          EXTERNAL_IP=""
+          while [ -z $EXTERNAL_IP ]; do
+            echo "Waiting for external IP..."
+            EXTERNAL_IP=$(kubectl get svc dx02 -n dx02 --template="{{range .status.loadBalancer.ingress}}{{.ip}}{{end}}")
+            [ -z "$EXTERNAL_IP" ] && sleep 10
+          done
+          echo "endpoint=$EXTERNAL_IP" >> $GITHUB_OUTPUT
+      
+      - name: Health check
+        run: |
+          sleep 30
+          curl -f http://${{ steps.get-endpoint.outputs.endpoint }}/health || exit 1
+      
+      - name: Summary
+        run: |
+          echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ github.event.inputs.environment || 'prd' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Endpoint:** http://${{ steps.get-endpoint.outputs.endpoint }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Pods Status" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          kubectl get pods -n dx02 >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
