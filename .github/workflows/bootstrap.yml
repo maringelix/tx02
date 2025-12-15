@@ -31,10 +31,25 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Azure Login
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Extract Azure Credentials
+        id: azure-creds
+        run: |
+          echo "CLIENT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientId')" >> $GITHUB_OUTPUT
+          echo "CLIENT_SECRET=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientSecret')" >> $GITHUB_OUTPUT
+          echo "TENANT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.tenantId')" >> $GITHUB_OUTPUT
+          echo "SUBSCRIPTION_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.subscriptionId')" >> $GITHUB_OUTPUT
+      
+      - name: Azure CLI Login
+        run: |
+          az login --service-principal \
+            -u "${{ steps.azure-creds.outputs.CLIENT_ID }}" \
+            -p "${{ steps.azure-creds.outputs.CLIENT_SECRET }}" \
+            --tenant "${{ steps.azure-creds.outputs.TENANT_ID }}"
+          
+          az account set --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}"
+          
+          echo "✅ Logged in as Service Principal"
+          az account show
       
       - name: Check if Resources Already Exist
         id: check
@@ -182,10 +197,25 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Azure Login
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Extract Azure Credentials
+        id: azure-creds
+        run: |
+          echo "CLIENT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientId')" >> $GITHUB_OUTPUT
+          echo "CLIENT_SECRET=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientSecret')" >> $GITHUB_OUTPUT
+          echo "TENANT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.tenantId')" >> $GITHUB_OUTPUT
+          echo "SUBSCRIPTION_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.subscriptionId')" >> $GITHUB_OUTPUT
+      
+      - name: Azure CLI Login
+        run: |
+          az login --service-principal \
+            -u "${{ steps.azure-creds.outputs.CLIENT_ID }}" \
+            -p "${{ steps.azure-creds.outputs.CLIENT_SECRET }}" \
+            --tenant "${{ steps.azure-creds.outputs.TENANT_ID }}"
+          
+          az account set --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}"
+          
+          echo "✅ Logged in as Service Principal"
+          az account show
       
       - name: Create Resource Group for Terraform State
         run: |
