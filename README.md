@@ -68,7 +68,32 @@ Este projeto demonstra uma arquitetura cloud moderna na Azure com:
 - ✅ **Alta Disponibilidade** - Multi-zone com load balancing
 - ✅ **Segurança** - RBAC, NSGs, Key Vault
 
-## 📋 Arquitetura
+## � Quick Start
+
+### 🎯 Método Recomendado: CI/CD (GitHub Actions)
+
+**Provisionamento 100% automatizado via GitHub Actions - zero configuração local!**
+
+📖 **[QUICKSTART_CICD.md](./QUICKSTART_CICD.md)** - Guia rápido (5 minutos)  
+📚 **[BOOTSTRAP_GUIDE.md](./BOOTSTRAP_GUIDE.md)** - Documentação completa
+
+```bash
+# Passo a passo resumido:
+1. Configure secrets no GitHub (AZURE_CREDENTIALS, passwords)
+2. Execute workflow: Bootstrap - Setup Terraform Backend
+3. Execute workflow: Terraform Apply
+4. Configure secrets no DX02
+5. Execute workflow: Deploy to AKS
+# ✅ Pronto! Infraestrutura e aplicação rodando em ~25 minutos
+```
+
+### 💻 Setup Local (Alternativo)
+
+Para desenvolvimento local ou troubleshooting - veja seção completa no final do README.
+
+---
+
+## �📋 Arquitetura
 
 ### **Modo AKS (Kubernetes)**
 ```

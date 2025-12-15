@@ -1,0 +1,156 @@
+name: Bootstrap - Setup Terraform Backend
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "bootstrap" to confirm setup'
+        required: true
+
+env:
+  RESOURCE_GROUP: terraform-state-rg
+  STORAGE_ACCOUNT: tfstatetx02
+  CONTAINER_NAME: tfstate
+  LOCATION: eastus
+
+jobs:
+  bootstrap:
+    name: Setup Terraform State Backend
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Validate confirmation
+        if: github.event.inputs.confirm != 'bootstrap'
+        run: |
+          echo "❌ Confirmation failed. You must type 'bootstrap' to proceed."
+          exit 1
+      
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Create Resource Group for Terraform State
+        run: |
+          echo "📦 Creating Resource Group: ${{ env.RESOURCE_GROUP }}"
+          az group create \
+            --name ${{ env.RESOURCE_GROUP }} \
+            --location ${{ env.LOCATION }} \
+            --tags Environment=shared Purpose=terraform-state ManagedBy=GitHub-Actions
+          
+          echo "✅ Resource Group created successfully"
+      
+      - name: Create Storage Account for Terraform State
+        run: |
+          echo "💾 Creating Storage Account: ${{ env.STORAGE_ACCOUNT }}"
+          az storage account create \
+            --name ${{ env.STORAGE_ACCOUNT }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --location ${{ env.LOCATION }} \
+            --sku Standard_LRS \
+            --encryption-services blob \
+            --https-only true \
+            --min-tls-version TLS1_2 \
+            --allow-blob-public-access false \
+            --tags Environment=shared Purpose=terraform-state ManagedBy=GitHub-Actions
+          
+          echo "✅ Storage Account created successfully"
+      
+      - name: Enable Versioning on Storage Account
+        run: |
+          echo "🔄 Enabling versioning on storage account..."
+          az storage account blob-service-properties update \
+            --account-name ${{ env.STORAGE_ACCOUNT }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --enable-versioning true
+          
+          echo "✅ Versioning enabled"
+      
+      - name: Create Blob Container for Terraform State
+        run: |
+          echo "📁 Creating Blob Container: ${{ env.CONTAINER_NAME }}"
+          az storage container create \
+            --name ${{ env.CONTAINER_NAME }} \
+            --account-name ${{ env.STORAGE_ACCOUNT }} \
+            --auth-mode login
+          
+          echo "✅ Blob Container created successfully"
+      
+      - name: Configure Blob Container for State Locking
+        run: |
+          echo "🔒 Configuring blob properties for state locking..."
+          az storage blob service-properties update \
+            --account-name ${{ env.STORAGE_ACCOUNT }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --enable-delete-retention true \
+            --delete-retention-days 7
+          
+          echo "✅ State locking configured"
+      
+      - name: Grant Service Principal Access
+        run: |
+          echo "🔐 Granting Service Principal access to Storage Account..."
+          
+          SP_ID=$(az ad sp list --display-name "github-actions-tx02" --query "[0].id" -o tsv)
+          STORAGE_ID=$(az storage account show --name ${{ env.STORAGE_ACCOUNT }} --resource-group ${{ env.RESOURCE_GROUP }} --query id -o tsv)
+          
+          # Storage Blob Data Contributor role
+          az role assignment create \
+            --assignee $SP_ID \
+            --role "Storage Blob Data Contributor" \
+            --scope $STORAGE_ID
+          
+          echo "✅ Permissions granted successfully"
+      
+      - name: Test Terraform Backend Connection
+        run: |
+          echo "🧪 Testing Terraform backend connection..."
+          
+          # Create a minimal Terraform config to test backend
+          cat > test-backend.tf << 'EOF'
+          terraform {
+            backend "azurerm" {
+              resource_group_name  = "${{ env.RESOURCE_GROUP }}"
+              storage_account_name = "${{ env.STORAGE_ACCOUNT }}"
+              container_name       = "${{ env.CONTAINER_NAME }}"
+              key                  = "bootstrap-test.tfstate"
+            }
+          }
+          EOF
+          
+          # Install Terraform
+          wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+          sudo apt update && sudo apt install terraform
+          
+          # Test backend init
+          terraform init
+          
+          echo "✅ Terraform backend connection successful!"
+          
+          # Cleanup test file
+          rm test-backend.tf
+      
+      - name: Summary
+        run: |
+          echo "## ✅ Bootstrap Completed Successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Terraform Backend Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Configuration | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Resource Group | \`${{ env.RESOURCE_GROUP }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Storage Account | \`${{ env.STORAGE_ACCOUNT }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Container | \`${{ env.CONTAINER_NAME }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Location | \`${{ env.LOCATION }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "1. ✅ Backend storage configured" >> $GITHUB_STEP_SUMMARY
+          echo "2. ✅ Service Principal has access" >> $GITHUB_STEP_SUMMARY
+          echo "3. 🚀 Ready to run Terraform Apply workflow" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**You can now create infrastructure using the Terraform Apply workflow!**" >> $GITHUB_STEP_SUMMARY
