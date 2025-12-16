@@ -83,7 +83,7 @@ output "deployment_mode" {
 
 output "next_steps" {
   description = "Próximos passos após o deploy"
-  value = var.use_aks ? <<-EOT
+  value       = var.use_aks ? <<-EOT
 ✅ Infraestrutura criada com sucesso!
 
 Próximos passos:
@@ -98,7 +98,8 @@ Próximos passos:
 
 4. Acessar a aplicação:
    kubectl get svc -n default
-EOT : <<-EOT
+EOT
+: <<-EOT
 ✅ Infraestrutura criada com sucesso!
 
 Próximos passos:

@@ -14,7 +14,6 @@ terraform {
     storage_account_name = "tfstatetx02"
     container_name       = "tfstate"
     key                  = "tx02-prd.tfstate"
-    use_azuread_auth     = true
   }
 }
 
