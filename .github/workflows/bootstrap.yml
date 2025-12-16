@@ -128,31 +128,16 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
       
-      - name: Azure Login and Create Infrastructure
-          
+      - name: Create Infrastructure
+        run: |
           # ===== STEP 1: Resource Group =====
           echo "📦 Creating Resource Group: ${{ env.RESOURCE_GROUP }}"
           az group create \
             --name ${{ env.RESOURCE_GROUP }} \
             --location ${{ env.LOCATION }} \
-            --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}" \
             --tags Environment=shared Purpose=terraform-state ManagedBy=GitHub-Actions
           
           echo "✅ Resource Group created successfully"
-          echo ""
-          
-          # ===== DEBUG: Verify subscription context =====
-          echo "🔍 Verifying subscription context before storage account creation..."
-          az account show
-          az account set --subscription "$ARM_SUBSCRIPTION_ID"
-          
-          # Wait for resource group to fully propagate
-          echo "⏳ Waiting 10 seconds for resource group propagation..."
-          sleep 10
-          
-          # Verify resource group exists
-          echo "🔍 Verifying resource group exists..."
-          az group show --name ${{ env.RESOURCE_GROUP }}
           echo ""
           
           # ===== STEP 2: Storage Account =====
