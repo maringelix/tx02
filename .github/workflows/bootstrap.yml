@@ -183,7 +183,6 @@ jobs:
           az storage account blob-service-properties update \
             --account-name ${{ env.STORAGE_ACCOUNT }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}" \
             --enable-versioning true
           
           echo "✅ Versioning enabled"
@@ -201,30 +200,29 @@ jobs:
           
           # ===== STEP 5: Configure Soft Delete =====
           echo "🔒 Configuring soft delete (7 days retention)..."
-          az storage blob service-properties update \
+          az storage account blob-service-properties delete-policy update \
             --account-name ${{ env.STORAGE_ACCOUNT }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}" \
-            --enable-delete-retention true \
-            --delete-retention-days 7
+            --enable true \
+            --days-retained 7
           
           echo "✅ Soft delete configured"
           echo ""
           
           # ===== STEP 6: Grant Service Principal Access =====
           echo "🔐 Granting Service Principal access to Storage Account..."
-          SP_ID="${{ steps.azure-creds.outputs.CLIENT_ID }}"
           STORAGE_ID=$(az storage account show \
             --name ${{ env.STORAGE_ACCOUNT }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}" \
             --query id -o tsv)
           
+          SP_OBJECT_ID=$(az ad sp list --display-name github-actions-tx02 --query "[0].id" -o tsv)
+          
           az role assignment create \
-            --assignee "${SP_ID}" \
+            --assignee-object-id "${SP_OBJECT_ID}" \
+            --assignee-principal-type ServicePrincipal \
             --role "Storage Blob Data Contributor" \
-            --scope "${STORAGE_ID}" \
-            --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}"
+            --scope "${STORAGE_ID}"
           
           echo "✅ Permissions granted successfully"
           echo ""
