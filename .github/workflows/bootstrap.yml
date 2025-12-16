@@ -229,12 +229,16 @@ jobs:
       
       - name: Create Storage Account for Terraform State
         run: |
+          # Revalidar subscription antes de criar storage account
+          az account set --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}"
+          
           echo "💾 Creating Storage Account: ${{ env.STORAGE_ACCOUNT }}"
           az storage account create \
             --name ${{ env.STORAGE_ACCOUNT }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --location ${{ env.LOCATION }} \
             --sku Standard_LRS \
+            --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}" \
             --encryption-services blob \
             --https-only true \
             --min-tls-version TLS1_2 \
@@ -249,6 +253,7 @@ jobs:
           az storage account blob-service-properties update \
             --account-name ${{ env.STORAGE_ACCOUNT }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
+            --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}" \
             --enable-versioning true
           
           echo "✅ Versioning enabled"
@@ -269,6 +274,7 @@ jobs:
           az storage blob service-properties update \
             --account-name ${{ env.STORAGE_ACCOUNT }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
+            --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}" \
             --enable-delete-retention true \
             --delete-retention-days 7
           
