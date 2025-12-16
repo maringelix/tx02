@@ -123,51 +123,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Extract Azure Credentials
-        id: azure-creds
-        run: |
-          echo "CLIENT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientId')" >> $GITHUB_OUTPUT
-          echo "CLIENT_SECRET=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientSecret')" >> $GITHUB_OUTPUT
-          echo "TENANT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.tenantId')" >> $GITHUB_OUTPUT
-          echo "SUBSCRIPTION_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.subscriptionId')" >> $GITHUB_OUTPUT
-      
-      - name: Debug - Verify Credentials
-        run: |
-          echo "🔍 Verifying extracted credentials..."
-          echo "Client ID: ${{ steps.azure-creds.outputs.CLIENT_ID }}"
-          echo "Tenant ID: ${{ steps.azure-creds.outputs.TENANT_ID }}"
-          echo "Subscription ID: ${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}"
-          SECRET="${{ steps.azure-creds.outputs.CLIENT_SECRET }}"
-          echo "Client Secret length: ${#SECRET}"
-          
-          # Verify subscription ID format
-          if [[ "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
-            echo "✅ Subscription ID format is valid"
-          else
-            echo "❌ Subscription ID format is INVALID"
-            exit 1
-          fi
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
       
       - name: Azure Login and Create Infrastructure
-        env:
-          ARM_SUBSCRIPTION_ID: ${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}
-          ARM_TENANT_ID: ${{ steps.azure-creds.outputs.TENANT_ID }}
-          ARM_CLIENT_ID: ${{ steps.azure-creds.outputs.CLIENT_ID }}
-          ARM_CLIENT_SECRET: ${{ steps.azure-creds.outputs.CLIENT_SECRET }}
-          AZURE_SUBSCRIPTION_ID: ${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}
-        run: |
-          # Login com Service Principal
-          az login --service-principal \
-            -u "$ARM_CLIENT_ID" \
-            -p "$ARM_CLIENT_SECRET" \
-            --tenant "$ARM_TENANT_ID"
-          
-          # Definir subscription como padrão
-          az account set --subscription "$ARM_SUBSCRIPTION_ID"
-          
-          echo "✅ Logged in as Service Principal"
-          az account show
-          echo ""
           
           # ===== STEP 1: Resource Group =====
           echo "📦 Creating Resource Group: ${{ env.RESOURCE_GROUP }}"
