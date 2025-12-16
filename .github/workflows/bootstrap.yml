@@ -200,11 +200,11 @@ jobs:
           
           # ===== STEP 5: Configure Soft Delete =====
           echo "🔒 Configuring soft delete (7 days retention)..."
-          az storage account blob-service-properties delete-policy update \
+          az storage account blob-service-properties update \
             --account-name ${{ env.STORAGE_ACCOUNT }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --enable true \
-            --days-retained 7
+            --enable-delete-retention true \
+            --delete-retention-days 7
           
           echo "✅ Soft delete configured"
           echo ""
