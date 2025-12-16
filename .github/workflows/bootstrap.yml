@@ -131,6 +131,14 @@ jobs:
           echo "TENANT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.tenantId')" >> $GITHUB_OUTPUT
           echo "SUBSCRIPTION_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.subscriptionId')" >> $GITHUB_OUTPUT
       
+      - name: Debug - Verify Credentials
+        run: |
+          echo "🔍 Verifying extracted credentials..."
+          echo "Client ID: ${{ steps.azure-creds.outputs.CLIENT_ID }}"
+          echo "Tenant ID: ${{ steps.azure-creds.outputs.TENANT_ID }}"
+          echo "Subscription ID: ${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}"
+          echo "Client Secret (length): ${#${{ steps.azure-creds.outputs.CLIENT_SECRET }}}"
+      
       - name: Azure Login and Create Infrastructure
         run: |
           # Login com Service Principal
