@@ -101,9 +101,78 @@ jobs:
           echo "| Storage Account | \`${{ env.STORAGE_ACCOUNT }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Container | \`${{ env.CONTAINER_NAME }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### 🏗️ Resources" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### 1. Resource Group" >> $GITHUB_STEP_SUMMARY
+          echo "- **Name**: \`${{ env.RESOURCE_GROUP }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Location**: \`${{ env.LOCATION }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tags**:" >> $GITHUB_STEP_SUMMARY
+          echo "  - Environment: shared" >> $GITHUB_STEP_SUMMARY
+          echo "  - Purpose: terraform-state" >> $GITHUB_STEP_SUMMARY
+          echo "  - ManagedBy: GitHub-Actions" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "#### 2. Storage Account" >> $GITHUB_STEP_SUMMARY
+          echo "- **Name**: \`${{ env.STORAGE_ACCOUNT }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **SKU**: Standard_LRS (Locally Redundant Storage)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Features**:" >> $GITHUB_STEP_SUMMARY
+          echo "  - ✅ Encryption at rest (AES-256)" >> $GITHUB_STEP_SUMMARY
+          echo "  - ✅ HTTPS only" >> $GITHUB_STEP_SUMMARY
+          echo "  - ✅ TLS 1.2 minimum" >> $GITHUB_STEP_SUMMARY
+          echo "  - ✅ Public access disabled" >> $GITHUB_STEP_SUMMARY
+          echo "  - ✅ Blob versioning enabled" >> $GITHUB_STEP_SUMMARY
+          echo "  - ✅ Soft delete (7 days)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "#### 3. Blob Container" >> $GITHUB_STEP_SUMMARY
+          echo "- **Name**: \`${{ env.CONTAINER_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Purpose**: Store Terraform state files" >> $GITHUB_STEP_SUMMARY
+          echo "- **Access**: Private (authenticated users only)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "#### 4. IAM Permissions" >> $GITHUB_STEP_SUMMARY
+          echo "- **Service Principal**: github-actions-tx02" >> $GITHUB_STEP_SUMMARY
+          echo "- **Role**: Storage Blob Data Contributor" >> $GITHUB_STEP_SUMMARY
+          echo "- **Scope**: Storage Account \`${{ env.STORAGE_ACCOUNT }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### 💰 Estimated Costs" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Resource | Estimated Cost/Month |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|---------------------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Storage Account (LRS) | ~\$2 USD |" >> $GITHUB_STEP_SUMMARY
+          echo "| Blob Storage (~1GB) | ~\$0.02 USD |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Total** | **~\$2.02 USD/month** |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
           echo "### ⚡ Next Steps" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "To apply: Run workflow again with action=**apply** and confirm=**bootstrap**" >> $GITHUB_STEP_SUMMARY
+          echo "To apply this configuration:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Review the plan above" >> $GITHUB_STEP_SUMMARY
+          echo "2. Run this workflow again" >> $GITHUB_STEP_SUMMARY
+          echo "3. Select **apply** as action" >> $GITHUB_STEP_SUMMARY
+          echo "4. Type **bootstrap** in the confirmation field" >> $GITHUB_STEP_SUMMARY
+          echo "5. Click **Run workflow**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ **Note**: No resources will be created in PLAN mode." >> $GITHUB_STEP_SUMMARY
+      
+      - name: Check Subscription Credits
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 💳 Subscription Information" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          SUB_INFO=$(az account show --query "{Name:name, State:state, SubscriptionId:id}" -o json)
+          SUB_NAME=$(echo $SUB_INFO | jq -r '.Name')
+          SUB_STATE=$(echo $SUB_INFO | jq -r '.State')
+          SUB_ID=$(echo $SUB_INFO | jq -r '.SubscriptionId')
+          
+          echo "- **Name**: \`$SUB_NAME\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **ID**: \`$SUB_ID\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **State**: \`$SUB_STATE\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Bootstrap plan completed successfully!" >> $GITHUB_STEP_SUMMARY
   
   bootstrap:
     name: Setup Terraform State Backend
@@ -118,6 +187,11 @@ jobs:
           echo "## ❌ Bootstrap Apply Failed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Reason**: Confirmation text was not 'bootstrap'" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "To proceed:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Run the workflow again" >> $GITHUB_STEP_SUMMARY
+          echo "2. Select **apply** as action" >> $GITHUB_STEP_SUMMARY
+          echo "3. Type exactly: **bootstrap**" >> $GITHUB_STEP_SUMMARY
           exit 1
       
       - name: Checkout code
@@ -143,36 +217,28 @@ jobs:
           echo "✅ Logged in as Service Principal"
           az account show
       
-      - name: Create Complete Terraform Backend Infrastructure
-        env:
-          ARM_SUBSCRIPTION_ID: ${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}
+      - name: Create Resource Group for Terraform State
         run: |
-          # Definir subscription padrão para TODOS os comandos az
-          export AZURE_DEFAULTS_SUBSCRIPTION="${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}"
-          export ARM_SUBSCRIPTION_ID="${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}"
-          
-          echo "🔧 Using Subscription: ${AZURE_DEFAULTS_SUBSCRIPTION}"
-          echo ""
-          
-          # ===== STEP 1: Resource Group =====
           echo "📦 Creating Resource Group: ${{ env.RESOURCE_GROUP }}"
           az group create \
             --name ${{ env.RESOURCE_GROUP }} \
             --location ${{ env.LOCATION }} \
-            --subscription "${AZURE_DEFAULTS_SUBSCRIPTION}" \
             --tags Environment=shared Purpose=terraform-state ManagedBy=GitHub-Actions
           
           echo "✅ Resource Group created successfully"
-          echo ""
+      
+      - name: Create Storage Account for Terraform State
+        run: |
+          # Revalidar subscription antes de criar storage account
+          az account set --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}"
           
-          # ===== STEP 2: Storage Account =====
           echo "💾 Creating Storage Account: ${{ env.STORAGE_ACCOUNT }}"
           az storage account create \
             --name ${{ env.STORAGE_ACCOUNT }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --location ${{ env.LOCATION }} \
-            --subscription "${AZURE_DEFAULTS_SUBSCRIPTION}" \
             --sku Standard_LRS \
+            --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}" \
             --encryption-services blob \
             --https-only true \
             --min-tls-version TLS1_2 \
@@ -180,20 +246,20 @@ jobs:
             --tags Environment=shared Purpose=terraform-state ManagedBy=GitHub-Actions
           
           echo "✅ Storage Account created successfully"
-          echo ""
-          
-          # ===== STEP 3: Enable Versioning =====
+      
+      - name: Enable Versioning on Storage Account
+        run: |
           echo "🔄 Enabling versioning on storage account..."
           az storage account blob-service-properties update \
             --account-name ${{ env.STORAGE_ACCOUNT }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --subscription "${AZURE_DEFAULTS_SUBSCRIPTION}" \
+            --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}" \
             --enable-versioning true
           
           echo "✅ Versioning enabled"
-          echo ""
-          
-          # ===== STEP 4: Create Blob Container =====
+      
+      - name: Create Blob Container for Terraform State
+        run: |
           echo "📁 Creating Blob Container: ${{ env.CONTAINER_NAME }}"
           az storage container create \
             --name ${{ env.CONTAINER_NAME }} \
@@ -201,38 +267,62 @@ jobs:
             --auth-mode login
           
           echo "✅ Blob Container created successfully"
-          echo ""
-          
-          # ===== STEP 5: Configure Soft Delete =====
-          echo "🔒 Configuring soft delete (7 days retention)..."
+      
+      - name: Configure Blob Container for State Locking
+        run: |
+          echo "🔒 Configuring blob properties for state locking..."
           az storage blob service-properties update \
             --account-name ${{ env.STORAGE_ACCOUNT }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --subscription "${AZURE_DEFAULTS_SUBSCRIPTION}" \
+            --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}" \
             --enable-delete-retention true \
             --delete-retention-days 7
           
-          echo "✅ Soft delete configured"
-          echo ""
-          
-          # ===== STEP 6: Grant Service Principal Access =====
+          echo "✅ State locking configured"
+      
+      - name: Grant Service Principal Access
+        run: |
           echo "🔐 Granting Service Principal access to Storage Account..."
-          SP_ID="${{ steps.azure-creds.outputs.CLIENT_ID }}"
-          STORAGE_ID=$(az storage account show \
-            --name ${{ env.STORAGE_ACCOUNT }} \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --subscription "${AZURE_DEFAULTS_SUBSCRIPTION}" \
-            --query id -o tsv)
           
+          SP_ID=$(az ad sp list --display-name "github-actions-tx02" --query "[0].id" -o tsv)
+          STORAGE_ID=$(az storage account show --name ${{ env.STORAGE_ACCOUNT }} --resource-group ${{ env.RESOURCE_GROUP }} --query id -o tsv)
+          
+          # Storage Blob Data Contributor role
           az role assignment create \
-            --assignee "${SP_ID}" \
+            --assignee $SP_ID \
             --role "Storage Blob Data Contributor" \
-            --scope "${STORAGE_ID}" \
-            --subscription "${AZURE_DEFAULTS_SUBSCRIPTION}"
+            --scope $STORAGE_ID
           
           echo "✅ Permissions granted successfully"
-          echo ""
-          echo "🎉 Bootstrap completed successfully!"
+      
+      - name: Test Terraform Backend Connection
+        run: |
+          echo "🧪 Testing Terraform backend connection..."
+          
+          # Create a minimal Terraform config to test backend
+          cat > test-backend.tf << 'EOF'
+          terraform {
+            backend "azurerm" {
+              resource_group_name  = "${{ env.RESOURCE_GROUP }}"
+              storage_account_name = "${{ env.STORAGE_ACCOUNT }}"
+              container_name       = "${{ env.CONTAINER_NAME }}"
+              key                  = "bootstrap-test.tfstate"
+            }
+          }
+          EOF
+          
+          # Install Terraform
+          wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+          sudo apt update && sudo apt install terraform
+          
+          # Test backend init
+          terraform init
+          
+          echo "✅ Terraform backend connection successful!"
+          
+          # Cleanup test file
+          rm test-backend.tf
       
       - name: Summary
         run: |
@@ -252,3 +342,5 @@ jobs:
           echo "1. ✅ Backend storage configured" >> $GITHUB_STEP_SUMMARY
           echo "2. ✅ Service Principal has access" >> $GITHUB_STEP_SUMMARY
           echo "3. 🚀 Ready to run Terraform Apply workflow" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**You can now create infrastructure using the Terraform Apply workflow!**" >> $GITHUB_STEP_SUMMARY
