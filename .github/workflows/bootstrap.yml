@@ -137,7 +137,16 @@ jobs:
           echo "Client ID: ${{ steps.azure-creds.outputs.CLIENT_ID }}"
           echo "Tenant ID: ${{ steps.azure-creds.outputs.TENANT_ID }}"
           echo "Subscription ID: ${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}"
-          echo "Client Secret (length): ${#${{ steps.azure-creds.outputs.CLIENT_SECRET }}}"
+          SECRET="${{ steps.azure-creds.outputs.CLIENT_SECRET }}"
+          echo "Client Secret length: ${#SECRET}"
+          
+          # Verify subscription ID format
+          if [[ "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+            echo "✅ Subscription ID format is valid"
+          else
+            echo "❌ Subscription ID format is INVALID"
+            exit 1
+          fi
       
       - name: Azure Login and Create Infrastructure
         run: |
