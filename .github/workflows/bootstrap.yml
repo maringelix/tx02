@@ -208,24 +208,6 @@ jobs:
           
           echo "✅ Soft delete configured"
           echo ""
-          
-          # ===== STEP 6: Grant Service Principal Access =====
-          echo "🔐 Granting Service Principal access to Storage Account..."
-          STORAGE_ID=$(az storage account show \
-            --name ${{ env.STORAGE_ACCOUNT }} \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --query id -o tsv)
-          
-          SP_OBJECT_ID=$(az ad sp list --display-name github-actions-tx02 --query "[0].id" -o tsv)
-          
-          az role assignment create \
-            --assignee-object-id "${SP_OBJECT_ID}" \
-            --assignee-principal-type ServicePrincipal \
-            --role "Storage Blob Data Contributor" \
-            --scope "${STORAGE_ID}"
-          
-          echo "✅ Permissions granted successfully"
-          echo ""
           echo "🎉 Bootstrap completed successfully!"
       
       - name: Summary
