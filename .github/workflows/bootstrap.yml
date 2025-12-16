@@ -149,15 +149,21 @@ jobs:
           fi
       
       - name: Azure Login and Create Infrastructure
+        env:
+          ARM_SUBSCRIPTION_ID: ${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ steps.azure-creds.outputs.TENANT_ID }}
+          ARM_CLIENT_ID: ${{ steps.azure-creds.outputs.CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ steps.azure-creds.outputs.CLIENT_SECRET }}
+          AZURE_SUBSCRIPTION_ID: ${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}
         run: |
           # Login com Service Principal
           az login --service-principal \
-            -u "${{ steps.azure-creds.outputs.CLIENT_ID }}" \
-            -p "${{ steps.azure-creds.outputs.CLIENT_SECRET }}" \
-            --tenant "${{ steps.azure-creds.outputs.TENANT_ID }}"
+            -u "$ARM_CLIENT_ID" \
+            -p "$ARM_CLIENT_SECRET" \
+            --tenant "$ARM_TENANT_ID"
           
           # Definir subscription como padrão
-          az account set --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}"
+          az account set --subscription "$ARM_SUBSCRIPTION_ID"
           
           echo "✅ Logged in as Service Principal"
           az account show
