@@ -45,9 +45,10 @@ jobs:
           ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          ARM_USE_CLI: false
-          ARM_USE_MSI: false
-          ARM_USE_OIDC: false
+          ARM_USE_CLI: "false"
+          ARM_USE_MSI: "false"
+          ARM_USE_OIDC: "false"
+          ARM_SKIP_PROVIDER_REGISTRATION: "true"
       
       - name: Terraform Validate
         id: validate
