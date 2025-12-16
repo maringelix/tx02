@@ -151,6 +151,7 @@ jobs:
           az group create \
             --name ${{ env.RESOURCE_GROUP }} \
             --location ${{ env.LOCATION }} \
+            --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}" \
             --tags Environment=shared Purpose=terraform-state ManagedBy=GitHub-Actions
           
           echo "✅ Resource Group created successfully"
@@ -162,6 +163,7 @@ jobs:
             --name ${{ env.STORAGE_ACCOUNT }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --location ${{ env.LOCATION }} \
+            --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}" \
             --sku Standard_LRS \
             --encryption-services blob \
             --https-only true \
