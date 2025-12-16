@@ -14,5 +14,13 @@ terraform {
     storage_account_name = "tfstatetx02"
     container_name       = "tfstate"
     key                  = "tx02-prd.tfstate"
+    use_azuread_auth     = true
   }
+}
+
+provider "azurerm" {
+  features {}
+  use_cli                         = false
+  use_oidc                        = false
+  skip_provider_registration      = false
 }
