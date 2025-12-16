@@ -98,8 +98,7 @@ Próximos passos:
 
 4. Acessar a aplicação:
    kubectl get svc -n default
-EOT
-: <<-EOT
+EOT : <<-EOT
 ✅ Infraestrutura criada com sucesso!
 
 Próximos passos:
