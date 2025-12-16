@@ -131,16 +131,17 @@ jobs:
           echo "TENANT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.tenantId')" >> $GITHUB_OUTPUT
           echo "SUBSCRIPTION_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.subscriptionId')" >> $GITHUB_OUTPUT
       
-      - name: Azure CLI Login
+      - name: Azure Login via Official Action
+        uses: azure/login@v2
+        with:
+          client-id: ${{ steps.azure-creds.outputs.CLIENT_ID }}
+          tenant-id: ${{ steps.azure-creds.outputs.TENANT_ID }}
+          subscription-id: ${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}
+          client-secret: ${{ steps.azure-creds.outputs.CLIENT_SECRET }}
+      
+      - name: Verify Azure Context
         run: |
-          az login --service-principal \
-            -u "${{ steps.azure-creds.outputs.CLIENT_ID }}" \
-            -p "${{ steps.azure-creds.outputs.CLIENT_SECRET }}" \
-            --tenant "${{ steps.azure-creds.outputs.TENANT_ID }}"
-          
-          az account set --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}"
-          
-          echo "✅ Logged in as Service Principal"
+          echo "✅ Logged in via azure/login action"
           az account show
       
       - name: Create Complete Terraform Backend Infrastructure
