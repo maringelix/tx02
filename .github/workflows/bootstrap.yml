@@ -128,6 +128,28 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
       
+      - name: Register Storage Resource Provider
+        run: |
+          echo "🔧 Registering Microsoft.Storage resource provider..."
+          az provider register --namespace Microsoft.Storage
+          
+          # Wait for registration to complete
+          echo "⏳ Waiting for registration to complete..."
+          az provider show --namespace Microsoft.Storage --query "registrationState" -o tsv
+          
+          timeout=60
+          elapsed=0
+          while [ $elapsed -lt $timeout ]; do
+            state=$(az provider show --namespace Microsoft.Storage --query "registrationState" -o tsv)
+            if [ "$state" = "Registered" ]; then
+              echo "✅ Microsoft.Storage provider is registered"
+              break
+            fi
+            echo "Current state: $state, waiting..."
+            sleep 5
+            elapsed=$((elapsed + 5))
+          done
+      
       - name: Create Infrastructure
         run: |
           # ===== STEP 1: Resource Group =====
