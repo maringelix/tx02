@@ -131,28 +131,19 @@ jobs:
           echo "TENANT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.tenantId')" >> $GITHUB_OUTPUT
           echo "SUBSCRIPTION_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.subscriptionId')" >> $GITHUB_OUTPUT
       
-      - name: Azure Login via Official Action
-        uses: azure/login@v2
-        with:
-          client-id: ${{ steps.azure-creds.outputs.CLIENT_ID }}
-          tenant-id: ${{ steps.azure-creds.outputs.TENANT_ID }}
-          subscription-id: ${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}
-          client-secret: ${{ steps.azure-creds.outputs.CLIENT_SECRET }}
-      
-      - name: Verify Azure Context
+      - name: Azure Login and Create Infrastructure
         run: |
-          echo "✅ Logged in via azure/login action"
-          az account show
-      
-      - name: Create Complete Terraform Backend Infrastructure
-        env:
-          ARM_SUBSCRIPTION_ID: ${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}
-        run: |
-          # Definir subscription padrão para TODOS os comandos az
-          export AZURE_DEFAULTS_SUBSCRIPTION="${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}"
-          export ARM_SUBSCRIPTION_ID="${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}"
+          # Login com Service Principal
+          az login --service-principal \
+            -u "${{ steps.azure-creds.outputs.CLIENT_ID }}" \
+            -p "${{ steps.azure-creds.outputs.CLIENT_SECRET }}" \
+            --tenant "${{ steps.azure-creds.outputs.TENANT_ID }}"
           
-          echo "🔧 Using Subscription: ${AZURE_DEFAULTS_SUBSCRIPTION}"
+          # Definir subscription como padrão
+          az account set --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}"
+          
+          echo "✅ Logged in as Service Principal"
+          az account show
           echo ""
           
           # ===== STEP 1: Resource Group =====
@@ -160,7 +151,6 @@ jobs:
           az group create \
             --name ${{ env.RESOURCE_GROUP }} \
             --location ${{ env.LOCATION }} \
-            --subscription "${AZURE_DEFAULTS_SUBSCRIPTION}" \
             --tags Environment=shared Purpose=terraform-state ManagedBy=GitHub-Actions
           
           echo "✅ Resource Group created successfully"
@@ -172,7 +162,6 @@ jobs:
             --name ${{ env.STORAGE_ACCOUNT }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --location ${{ env.LOCATION }} \
-            --subscription "${AZURE_DEFAULTS_SUBSCRIPTION}" \
             --sku Standard_LRS \
             --encryption-services blob \
             --https-only true \
@@ -188,7 +177,6 @@ jobs:
           az storage account blob-service-properties update \
             --account-name ${{ env.STORAGE_ACCOUNT }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --subscription "${AZURE_DEFAULTS_SUBSCRIPTION}" \
             --enable-versioning true
           
           echo "✅ Versioning enabled"
@@ -209,7 +197,6 @@ jobs:
           az storage blob service-properties update \
             --account-name ${{ env.STORAGE_ACCOUNT }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --subscription "${AZURE_DEFAULTS_SUBSCRIPTION}" \
             --enable-delete-retention true \
             --delete-retention-days 7
           
@@ -222,14 +209,12 @@ jobs:
           STORAGE_ID=$(az storage account show \
             --name ${{ env.STORAGE_ACCOUNT }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --subscription "${AZURE_DEFAULTS_SUBSCRIPTION}" \
             --query id -o tsv)
           
           az role assignment create \
             --assignee "${SP_ID}" \
             --role "Storage Blob Data Contributor" \
-            --scope "${STORAGE_ID}" \
-            --subscription "${AZURE_DEFAULTS_SUBSCRIPTION}"
+            --scope "${STORAGE_ID}"
           
           echo "✅ Permissions granted successfully"
           echo ""
