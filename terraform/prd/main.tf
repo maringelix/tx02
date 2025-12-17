@@ -94,7 +94,7 @@ module "vm" {
 
   subnet_id = module.networking.subnet_vm_id
 
-  db_host     = module.database.db_host
+  db_host     = length(module.database) > 0 ? module.database[0].db_host : "localhost"
   db_name     = var.db_name
   db_username = var.db_admin_username
   db_password = var.db_password
