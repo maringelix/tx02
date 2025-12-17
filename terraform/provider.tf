@@ -35,6 +35,10 @@ provider "azurerm" {
       recover_soft_deleted_key_vaults = true
     }
   }
+
+  # Use Service Principal authentication via environment variables
+  # ARM_CLIENT_ID, ARM_CLIENT_SECRET, ARM_SUBSCRIPTION_ID, ARM_TENANT_ID
+  use_cli = false
 }
 
 provider "azuread" {}
