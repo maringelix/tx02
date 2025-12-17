@@ -41,7 +41,6 @@ jobs:
         run: terraform init
         working-directory: ${{ env.WORKING_DIR }}
         env:
-          ARM_ACCESS_KEY: ${{ secrets.ARM_ACCESS_KEY }}
           ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
@@ -58,7 +57,6 @@ jobs:
           terraform plan -no-color -out=tfplan
         working-directory: ${{ env.WORKING_DIR }}
         env:
-          ARM_ACCESS_KEY: ${{ secrets.ARM_ACCESS_KEY }}
           ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
