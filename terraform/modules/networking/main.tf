@@ -4,7 +4,7 @@ resource "azurerm_virtual_network" "main" {
   location            = var.location
   resource_group_name = var.resource_group_name
   address_space       = var.vnet_address_space
-  
+
   tags = var.tags
 }
 
@@ -14,7 +14,7 @@ resource "azurerm_subnet" "aks" {
   resource_group_name  = var.resource_group_name
   virtual_network_name = azurerm_virtual_network.main.name
   address_prefixes     = [var.subnet_aks]
-  
+
   service_endpoints = ["Microsoft.Sql", "Microsoft.Storage"]
 }
 
@@ -24,9 +24,9 @@ resource "azurerm_subnet" "database" {
   resource_group_name  = var.resource_group_name
   virtual_network_name = azurerm_virtual_network.main.name
   address_prefixes     = [var.subnet_database]
-  
+
   service_endpoints = ["Microsoft.Sql"]
-  
+
   delegation {
     name = "fs"
     service_delegation {
@@ -44,7 +44,7 @@ resource "azurerm_subnet" "vm" {
   resource_group_name  = var.resource_group_name
   virtual_network_name = azurerm_virtual_network.main.name
   address_prefixes     = [var.subnet_vm]
-  
+
   service_endpoints = ["Microsoft.Sql", "Microsoft.Storage"]
 }
 
@@ -61,7 +61,7 @@ resource "azurerm_network_security_group" "aks" {
   name                = "${var.project_name}-${var.environment}-nsg-aks"
   location            = var.location
   resource_group_name = var.resource_group_name
-  
+
   security_rule {
     name                       = "AllowHTTPS"
     priority                   = 100
@@ -73,7 +73,7 @@ resource "azurerm_network_security_group" "aks" {
     source_address_prefix      = "*"
     destination_address_prefix = "*"
   }
-  
+
   security_rule {
     name                       = "AllowHTTP"
     priority                   = 110
@@ -85,7 +85,7 @@ resource "azurerm_network_security_group" "aks" {
     source_address_prefix      = "*"
     destination_address_prefix = "*"
   }
-  
+
   tags = var.tags
 }
 
@@ -94,7 +94,7 @@ resource "azurerm_network_security_group" "vm" {
   name                = "${var.project_name}-${var.environment}-nsg-vm"
   location            = var.location
   resource_group_name = var.resource_group_name
-  
+
   security_rule {
     name                       = "AllowSSH"
     priority                   = 100
@@ -106,7 +106,7 @@ resource "azurerm_network_security_group" "vm" {
     source_address_prefix      = "*"
     destination_address_prefix = "*"
   }
-  
+
   security_rule {
     name                       = "AllowHTTP"
     priority                   = 110
@@ -118,7 +118,7 @@ resource "azurerm_network_security_group" "vm" {
     source_address_prefix      = "*"
     destination_address_prefix = "*"
   }
-  
+
   security_rule {
     name                       = "AllowHTTPS"
     priority                   = 120
@@ -130,7 +130,7 @@ resource "azurerm_network_security_group" "vm" {
     source_address_prefix      = "*"
     destination_address_prefix = "*"
   }
-  
+
   tags = var.tags
 }
 
@@ -139,7 +139,7 @@ resource "azurerm_network_security_group" "database" {
   name                = "${var.project_name}-${var.environment}-nsg-db"
   location            = var.location
   resource_group_name = var.resource_group_name
-  
+
   security_rule {
     name                       = "AllowPostgreSQL"
     priority                   = 100
@@ -151,7 +151,7 @@ resource "azurerm_network_security_group" "database" {
     source_address_prefix      = "VirtualNetwork"
     destination_address_prefix = "*"
   }
-  
+
   tags = var.tags
 }
 

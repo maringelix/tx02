@@ -143,7 +143,7 @@ variable "vm_admin_password" {
 variable "tags" {
   description = "Tags para todos os recursos"
   type        = map(string)
-  default     = {
+  default = {
     Project     = "tx02"
     ManagedBy   = "Terraform"
     Environment = "production"
