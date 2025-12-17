@@ -1,8 +1,12 @@
+# TX02 Production Infrastructure
+# This configuration deploys AKS, PostgreSQL, and networking resources to Azure
+
 locals {
   name_prefix = "${var.project_name}-${var.environment}"
   common_tags = merge(var.tags, {
     Environment = var.environment
     Location    = var.location
+    ManagedBy   = "Terraform"
   })
 }
 
