@@ -59,7 +59,28 @@ jobs:
       - name: Terraform Plan
         id: plan
         run: |
-          terraform plan -no-color -out=tfplan
+          terraform plan -no-color -out=tfplan \
+            -var="project_name=tx02" \
+            -var="environment=prd" \
+            -var="location=eastus" \
+            -var="vnet_address_space=[\"10.0.0.0/16\"]" \
+            -var="subnet_aks=10.0.1.0/24" \
+            -var="subnet_database=10.0.2.0/24" \
+            -var="subnet_vm=10.0.3.0/24" \
+            -var="subnet_appgw=10.0.4.0/24" \
+            -var="use_aks=true" \
+            -var="aks_node_count=2" \
+            -var="aks_min_count=2" \
+            -var="aks_max_count=10" \
+            -var="aks_node_size=Standard_D2s_v3" \
+            -var="kubernetes_version=1.32" \
+            -var="db_sku_name=Standard_D2s_v3" \
+            -var="db_storage_gb=32" \
+            -var="db_version=17" \
+            -var="db_admin_username=dx02admin" \
+            -var="db_name=dx02_db" \
+            -var="vm_size=Standard_D2s_v3" \
+            -var="vm_admin_username=azureuser"
         working-directory: ${{ env.WORKING_DIR }}
         env:
           ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
