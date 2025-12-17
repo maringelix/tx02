@@ -25,6 +25,19 @@ resource "azurerm_postgresql_flexible_server" "main" {
   depends_on = [azurerm_private_dns_zone_virtual_network_link.postgres]
 }
 
+# Data source para obter informações da subnet
+data "azurerm_subnet" "database" {
+  name                 = split("/", var.subnet_id)[10]
+  virtual_network_name = split("/", var.subnet_id)[8]
+  resource_group_name  = var.resource_group_name
+}
+
+# Data source para obter a VNet
+data "azurerm_virtual_network" "main" {
+  name                = split("/", var.subnet_id)[8]
+  resource_group_name = var.resource_group_name
+}
+
 # Private DNS Zone para PostgreSQL
 resource "azurerm_private_dns_zone" "postgres" {
   name                = "${var.project_name}-${var.environment}-pdz.postgres.database.azure.com"
@@ -37,17 +50,10 @@ resource "azurerm_private_dns_zone" "postgres" {
 resource "azurerm_private_dns_zone_virtual_network_link" "postgres" {
   name                  = "${var.project_name}-${var.environment}-pdz-link"
   private_dns_zone_name = azurerm_private_dns_zone.postgres.name
-  virtual_network_id    = data.azurerm_subnet.database.virtual_network_id
+  virtual_network_id    = data.azurerm_virtual_network.main.id
   resource_group_name   = var.resource_group_name
   
   tags = var.tags
-}
-
-# Data source para obter informações da subnet
-data "azurerm_subnet" "database" {
-  name                 = split("/", var.subnet_id)[10]
-  virtual_network_name = split("/", var.subnet_id)[8]
-  resource_group_name  = var.resource_group_name
 }
 
 # Database
