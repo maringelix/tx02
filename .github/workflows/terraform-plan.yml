@@ -30,11 +30,6 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
       
-      - name: Azure Login
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-      
       - name: Terraform Format Check
         id: fmt
         run: terraform fmt -check -recursive
