@@ -70,7 +70,7 @@ jobs:
             -var="subnet_database=10.0.2.0/24" \
             -var="subnet_vm=10.0.3.0/24" \
             -var="subnet_appgw=10.0.4.0/24" \
-            -var="use_aks=true" \
+            -var="use_aks=false" \
             -var="aks_node_count=2" \
             -var="aks_min_count=2" \
             -var="aks_max_count=10" \
