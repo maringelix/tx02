@@ -59,7 +59,7 @@ jobs:
       
       - name: Terraform Plan
         id: plan
-        timeout-minutes: 10
+        timeout-minutes: 15
         run: |
           set -x
           echo "Starting terraform plan..."
@@ -78,6 +78,7 @@ jobs:
             -var="aks_max_count=10" \
             -var="aks_node_size=Standard_D2s_v3" \
             -var="kubernetes_version=1.32" \
+            -var="tags={}" \
             -var="db_sku_name=Standard_D2s_v3" \
             -var="db_storage_gb=32" \
             -var="db_version=17" \
