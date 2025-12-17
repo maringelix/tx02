@@ -28,17 +28,17 @@ output "subnet_aks_id" {
 # Database
 output "db_host" {
   description = "Hostname do database"
-  value       = module.database.db_host
+  value       = length(module.database) > 0 ? module.database[0].db_host : ""
 }
 
 output "db_name" {
   description = "Nome do database"
-  value       = module.database.db_name
+  value       = length(module.database) > 0 ? module.database[0].db_name : ""
 }
 
 output "db_connection_string" {
   description = "Connection string do database (sem senha)"
-  value       = "postgresql://${var.db_admin_username}@${module.database.db_host}:5432/${var.db_name}"
+  value       = length(module.database) > 0 ? "postgresql://${var.db_admin_username}@${module.database[0].db_host}:5432/${var.db_name}" : ""
   sensitive   = true
 }
 

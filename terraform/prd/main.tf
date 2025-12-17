@@ -35,8 +35,9 @@ module "networking" {
   tags = local.common_tags
 }
 
-# Database Module
+# Database Module (condicional)
 module "database" {
+  count  = var.use_aks ? 1 : 0  # Temporariamente desabilitado para testes
   source = "../modules/database"
 
   project_name        = var.project_name
