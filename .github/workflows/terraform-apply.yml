@@ -46,6 +46,30 @@ jobs:
           echo "environment=$ENV" >> $GITHUB_OUTPUT
           echo "working_dir=terraform/$ENV" >> $GITHUB_OUTPUT
       
+      - name: Register Azure Resource Providers
+        run: |
+          az login --service-principal \
+            -u ${{ secrets.AZURE_CLIENT_ID }} \
+            -p ${{ secrets.AZURE_CLIENT_SECRET }} \
+            --tenant ${{ secrets.AZURE_TENANT_ID }}
+          
+          az account set --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          
+          echo "Registering required Azure Resource Providers..."
+          az provider register --namespace Microsoft.Network --wait
+          az provider register --namespace Microsoft.Compute --wait
+          az provider register --namespace Microsoft.Storage --wait
+          az provider register --namespace Microsoft.ContainerService --wait
+          az provider register --namespace Microsoft.OperationalInsights --wait
+          az provider register --namespace Microsoft.DBforPostgreSQL --wait
+          
+          echo "Verifying provider registration status..."
+          az provider show -n Microsoft.Network --query "registrationState"
+          az provider show -n Microsoft.Compute --query "registrationState"
+          az provider show -n Microsoft.ContainerService --query "registrationState"
+          az provider show -n Microsoft.OperationalInsights --query "registrationState"
+          az provider show -n Microsoft.DBforPostgreSQL --query "registrationState"
+      
       - name: Terraform Init
         run: terraform init
         working-directory: ${{ steps.set-env.outputs.working_dir }}
