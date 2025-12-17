@@ -85,7 +85,7 @@ jobs:
             -var="aks_node_count=2" \
             -var="aks_min_count=2" \
             -var="aks_max_count=10" \
-            -var="aks_node_size=Standard_D2s_v3" \
+            -var="aks_node_size=Standard_B2s" \
             -var="kubernetes_version=1.32" \
             -var="tags={}" \
             -var="db_sku_name=GP_Standard_D2s_v3" \
