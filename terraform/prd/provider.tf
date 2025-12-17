@@ -21,9 +21,6 @@ terraform {
     storage_account_name = "tfstatetx02"
     container_name       = "tfstate"
     key                  = "tx02-prd.tfstate"
-    use_cli              = false
-    use_msi              = false
-    use_oidc             = false
   }
 }
 
