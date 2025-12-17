@@ -61,6 +61,8 @@ jobs:
         id: plan
         timeout-minutes: 10
         run: |
+          set -x
+          echo "Starting terraform plan..."
           terraform plan -no-color -out=tfplan -parallelism=10 \
             -var="project_name=tx02" \
             -var="environment=prd" \
