@@ -79,7 +79,8 @@ jobs:
             -var="db_admin_username=dx02admin" \
             -var="db_name=dx02_db" \
             -var="vm_size=Standard_D2s_v3" \
-            -var="vm_admin_username=azureuser"
+            -var="vm_admin_username=azureuser" \
+            -var="tags={}"
         working-directory: ${{ steps.set-env.outputs.working_dir }}
         env:
           ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
