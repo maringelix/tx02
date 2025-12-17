@@ -28,17 +28,17 @@ output "subnet_aks_id" {
 # Database
 output "db_host" {
   description = "Hostname do database"
-  value       = module.database.db_host
+  value       = length(module.database) > 0 ? module.database[0].db_host : ""
 }
 
 output "db_name" {
   description = "Nome do database"
-  value       = module.database.db_name
+  value       = length(module.database) > 0 ? module.database[0].db_name : ""
 }
 
 output "db_connection_string" {
   description = "Connection string do database (sem senha)"
-  value       = "postgresql://${var.db_admin_username}@${module.database.db_host}:5432/${var.db_name}"
+  value       = length(module.database) > 0 ? "postgresql://${var.db_admin_username}@${module.database[0].db_host}:5432/${var.db_name}" : ""
   sensitive   = true
 }
 
@@ -83,36 +83,35 @@ output "deployment_mode" {
 
 output "next_steps" {
   description = "Próximos passos após o deploy"
-  value       = var.use_aks ? <<-EOT
-    ✅ Infraestrutura criada com sucesso!
-    
-    Próximos passos:
-    1. Conectar ao AKS:
-       az aks get-credentials --resource-group ${azurerm_resource_group.main.name} --name ${module.aks[0].cluster_name}
-    
-    2. Verificar nodes:
-       kubectl get nodes
-    
-    3. Fazer deploy da aplicação:
-       kubectl apply -f k8s/
-    
-    4. Acessar a aplicação:
-       kubectl get svc -n default
-  EOT
-  : <<-EOT
-    ✅ Infraestrutura criada com sucesso!
-    
-    Próximos passos:
-    1. Conectar na VM via SSH:
-       ssh ${var.vm_admin_username}@${module.vm[0].public_ip}
-    
-    2. Verificar containers:
-       docker ps
-    
-    3. Ver logs da aplicação:
-       docker logs dx02
-    
-    4. Acessar a aplicação:
-       http://${module.vm[0].public_ip}
-  EOT
+  value = var.use_aks ? join("\n", [
+    "✅ Infraestrutura criada com sucesso!",
+    "",
+    "Próximos passos:",
+    "1. Conectar ao AKS:",
+    "   az aks get-credentials --resource-group ${azurerm_resource_group.main.name} --name ${module.aks[0].cluster_name}",
+    "",
+    "2. Verificar nodes:",
+    "   kubectl get nodes",
+    "",
+    "3. Fazer deploy da aplicação:",
+    "   kubectl apply -f k8s/",
+    "",
+    "4. Acessar a aplicação:",
+    "   kubectl get svc -n default"
+    ]) : join("\n", [
+    "✅ Infraestrutura criada com sucesso!",
+    "",
+    "Próximos passos:",
+    "1. Conectar na VM via SSH:",
+    "   ssh ${var.vm_admin_username}@${module.vm[0].public_ip}",
+    "",
+    "2. Verificar containers:",
+    "   docker ps",
+    "",
+    "3. Ver logs da aplicação:",
+    "   docker logs dx02",
+    "",
+    "4. Acessar a aplicação:",
+    "   http://${module.vm[0].public_ip}"
+  ])
 }

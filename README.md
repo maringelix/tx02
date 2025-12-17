@@ -75,7 +75,8 @@ Este projeto demonstra uma arquitetura cloud moderna na Azure com:
 **Provisionamento 100% automatizado via GitHub Actions - zero configuração local!**
 
 📖 **[QUICKSTART_CICD.md](./QUICKSTART_CICD.md)** - Guia rápido (5 minutos)  
-📚 **[BOOTSTRAP_GUIDE.md](./BOOTSTRAP_GUIDE.md)** - Documentação completa
+📚 **[BOOTSTRAP_GUIDE.md](./BOOTSTRAP_GUIDE.md)** - Documentação completa  
+🔧 **[TERRAFORM_PLAN_TROUBLESHOOTING.md](./TERRAFORM_PLAN_TROUBLESHOOTING.md)** - Troubleshooting completo do workflow
 
 ```bash
 # Passo a passo resumido:
