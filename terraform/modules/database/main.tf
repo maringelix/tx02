@@ -37,7 +37,7 @@ resource "azurerm_private_dns_zone" "postgres" {
 resource "azurerm_private_dns_zone_virtual_network_link" "postgres" {
   name                  = "${var.project_name}-${var.environment}-pdz-link"
   private_dns_zone_name = azurerm_private_dns_zone.postgres.name
-  virtual_network_id    = data.azurerm_subnet.database.virtual_network_id
+  virtual_network_id    = var.vnet_id
   resource_group_name   = var.resource_group_name
   
   tags = var.tags

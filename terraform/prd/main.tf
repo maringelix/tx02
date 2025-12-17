@@ -49,6 +49,7 @@ module "database" {
   db_name             = var.db_name
   
   subnet_id           = module.networking.subnet_database_id
+  vnet_id             = module.networking.vnet_id
   
   tags = local.common_tags
 }

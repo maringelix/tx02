@@ -54,6 +54,11 @@ variable "subnet_id" {
   type        = string
 }
 
+variable "vnet_id" {
+  description = "ID da VNet"
+  type        = string
+}
+
 variable "tags" {
   description = "Tags"
   type        = map(string)
