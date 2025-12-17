@@ -37,7 +37,7 @@ module "networking" {
 
 # Database Module (condicional)
 module "database" {
-  count  = var.use_aks ? 1 : 0  # Temporariamente desabilitado para testes
+  count  = var.use_aks ? 1 : 0 # Temporariamente desabilitado para testes
   source = "../modules/database"
 
   project_name        = var.project_name
