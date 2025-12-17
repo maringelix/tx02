@@ -59,8 +59,9 @@ jobs:
       
       - name: Terraform Plan
         id: plan
+        timeout-minutes: 10
         run: |
-          terraform plan -no-color -out=tfplan \
+          terraform plan -no-color -out=tfplan -parallelism=10 \
             -var="project_name=tx02" \
             -var="environment=prd" \
             -var="location=eastus" \
