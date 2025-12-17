@@ -20,4 +20,6 @@ terraform {
 
 provider "azurerm" {
   features {}
+  
+  use_cli = false  # Disable Azure CLI authentication fallback
 }
