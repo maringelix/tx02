@@ -61,6 +61,7 @@ jobs:
           az provider register --namespace Microsoft.Storage --wait
           az provider register --namespace Microsoft.ContainerService --wait
           az provider register --namespace Microsoft.OperationalInsights --wait
+          az provider register --namespace Microsoft.OperationsManagement --wait
           az provider register --namespace Microsoft.DBforPostgreSQL --wait
           
           echo "Verifying provider registration status..."

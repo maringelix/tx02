@@ -17,8 +17,9 @@ resource "azurerm_postgresql_flexible_server" "main" {
 
   sku_name = var.db_sku_name
 
-  backup_retention_days        = 7
-  geo_redundant_backup_enabled = false
+  backup_retention_days         = 7
+  geo_redundant_backup_enabled  = false
+  public_network_access_enabled = false
 
   tags = var.tags
 
