@@ -70,6 +70,7 @@ jobs:
           az provider show -n Microsoft.ContainerService --query "registrationState"
           az provider show -n Microsoft.OperationalInsights --query "registrationState"
           az provider show -n Microsoft.DBforPostgreSQL --query "registrationState"
+          az provider show -n Microsoft.ContainerRegistry --query "registrationState"
       
       - name: Terraform Init
         run: terraform init
@@ -170,6 +171,7 @@ jobs:
             -var="db_name=tx02-prd-db" \
             -var="vm_size=Standard_D2s_v3" \
             -var="vm_admin_username=azureuser" \
+            -var="acr_sku=Basic" \
             -var="tags={}"
         working-directory: ${{ steps.set-env.outputs.working_dir }}
         env:
@@ -187,6 +189,8 @@ jobs:
           echo "aks_name=$(terraform output -raw aks_cluster_name 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "resource_group=$(terraform output -raw resource_group_name)" >> $GITHUB_OUTPUT
           echo "db_host=$(terraform output -raw db_host)" >> $GITHUB_OUTPUT
+          echo "acr_name=$(terraform output -raw acr_name 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "acr_login_server=$(terraform output -raw acr_login_server 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
         working-directory: ${{ steps.set-env.outputs.working_dir }}
         env:
           ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -203,4 +207,8 @@ jobs:
           echo "**Database Host:** ${{ steps.tf-outputs.outputs.db_host }}" >> $GITHUB_STEP_SUMMARY
           if [ -n "${{ steps.tf-outputs.outputs.aks_name }}" ]; then
             echo "**AKS Cluster:** ${{ steps.tf-outputs.outputs.aks_name }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -n "${{ steps.tf-outputs.outputs.acr_name }}" ]; then
+            echo "**ACR Name:** ${{ steps.tf-outputs.outputs.acr_name }}" >> $GITHUB_STEP_SUMMARY
+            echo "**ACR Login:** ${{ steps.tf-outputs.outputs.acr_login_server }}" >> $GITHUB_STEP_SUMMARY
           fi
