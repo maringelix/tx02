@@ -114,14 +114,14 @@ jobs:
     - name: Install kube-prometheus-stack
       if: ${{ !inputs.destroy }}
       env:
-        SLACK_WEBHOOK: ${{ inputs.slack_webhook || secrets.SLACK_WEBHOOK_URL || 'https://hooks.slack.com/services/PLACEHOLDER' }}
+        SLACK_WEBHOOK: ${{ inputs.slack_webhook || secrets.SLACK_WEBHOOK_URL || '' }}
       run: |
         helm upgrade --install kube-prometheus-stack \
           prometheus-community/kube-prometheus-stack \
           --namespace monitoring \
           --values k8s/observability/prometheus-values.yaml \
           --set grafana.adminPassword="${{ secrets.GRAFANA_ADMIN_PASSWORD || 'admin' }}" \
-          --set alertmanager.config.global.slack_api_url="${SLACK_WEBHOOK}" \
+          --set alertmanager.slackWebhookUrl="${SLACK_WEBHOOK}" \
           --timeout=5m
         
         echo "✅ Helm chart installed. Pods will start in background."
