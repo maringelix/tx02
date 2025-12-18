@@ -122,10 +122,9 @@ jobs:
           --values k8s/observability/prometheus-values.yaml \
           --set grafana.adminPassword="${{ secrets.GRAFANA_ADMIN_PASSWORD || 'admin' }}" \
           --set alertmanager.config.global.slack_api_url="${SLACK_WEBHOOK}" \
-          --set prometheusOperator.admissionWebhooks.enabled=false \
-          --timeout=15m \
-          --wait \
-          --debug
+          --timeout=5m
+        
+        echo "✅ Helm chart installed. Pods will start in background."
     
     - name: Deploy ServiceMonitor
       if: ${{ !inputs.destroy }}
@@ -136,6 +135,12 @@ jobs:
       if: ${{ !inputs.destroy }}
       run: |
         kubectl apply -f k8s/observability/grafana-dashboard.yaml
+    
+    - name: Deploy Grafana LoadBalancer (optional)
+      if: ${{ !inputs.destroy }}
+      run: |
+        kubectl apply -f k8s/observability/grafana-loadbalancer.yaml || true
+        echo "⚠️  LoadBalancer may fail due to Azure IP limits. Use port-forward as alternative."
     
     - name: Wait for pods to be ready
       if: ${{ !inputs.destroy }}
@@ -172,13 +177,24 @@ jobs:
       if: ${{ !inputs.destroy }}
       run: |
         echo "========================================"
-        echo "Observability Stack Deployed!"
+        echo "✅ Observability Stack Deployed!"
         echo "========================================"
         echo ""
-        echo "Access Grafana:"
-        echo "  kubectl port-forward -n monitoring svc/kube-prometheus-stack-grafana 3000:80"
-        echo "  http://localhost:3000"
-        echo "  Username: admin"
+        echo "📊 Access Grafana:"
+        echo "  Port-forward (recommended):"
+        echo "    kubectl port-forward -n monitoring svc/kube-prometheus-stack-grafana 8080:80"
+        echo "    http://localhost:8080"
+        echo ""
+        echo "  LoadBalancer (if provisioned):"
+        EXTERNAL_IP=$(kubectl get svc -n monitoring grafana-external -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "<pending or failed>")
+        echo "    http://$EXTERNAL_IP"
+        echo ""
+        echo "🔑 Credentials:"
+        echo "    Username: admin"
+        echo "    Password: ${{ secrets.GRAFANA_ADMIN_PASSWORD || 'admin' }}"
+        echo ""
+        echo "📚 Documentation:"
+        echo "    See k8s/observability/ACCESS.md for details"
         echo "  Password: ${{ secrets.GRAFANA_ADMIN_PASSWORD || 'admin' }}"
         echo ""
         echo "Access Prometheus:"
