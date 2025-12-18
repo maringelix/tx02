@@ -84,11 +84,23 @@ jobs:
       - name: Import Existing SQL Resources
         run: |
           # Import SQL Server if exists (ignora erro se não existir)
-          terraform import module.database.azurerm_mssql_server.main \
+          terraform import \
+            -var="project_name=tx02" \
+            -var="environment=prd" \
+            -var="location=eastus" \
+            -var="db_admin_username=tx02" \
+            module.database.azurerm_mssql_server.main \
             /subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/tx02-prd-rg/providers/Microsoft.Sql/servers/tx02-prd-sql || true
           
           # Import SQL Database if exists
-          terraform import module.database.azurerm_mssql_database.main \
+          terraform import \
+            -var="project_name=tx02" \
+            -var="environment=prd" \
+            -var="location=eastus" \
+            -var="db_name=tx02-prd-db" \
+            -var="db_sku_name=Basic" \
+            -var="db_storage_gb=2" \
+            module.database.azurerm_mssql_database.main \
             /subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/tx02-prd-rg/providers/Microsoft.Sql/servers/tx02-prd-sql/databases/tx02-prd-db || true
         working-directory: ${{ steps.set-env.outputs.working_dir }}
         env:
