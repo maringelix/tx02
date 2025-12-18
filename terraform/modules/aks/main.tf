@@ -57,10 +57,11 @@ resource "azurerm_log_analytics_workspace" "aks" {
   tags = var.tags
 }
 
-# Role Assignment para permitir AKS acessar ACR (se existir)
-resource "azurerm_role_assignment" "aks_network" {
-  principal_id                     = azurerm_kubernetes_cluster.main.identity[0].principal_id
-  role_definition_name             = "Network Contributor"
-  scope                            = var.subnet_id
-  skip_service_principal_aad_check = true
-}
+# Role assignment removed - requires User Access Administrator permission on SP
+# AKS managed identity will get necessary network permissions automatically
+# resource "azurerm_role_assignment" "aks_network" {
+#   principal_id                     = azurerm_kubernetes_cluster.main.identity[0].principal_id
+#   role_definition_name             = "Network Contributor"
+#   scope                            = var.subnet_id
+#   skip_service_principal_aad_check = true
+# }
