@@ -65,6 +65,13 @@ grafana:
   # Admin credentials
   adminPassword: admin
   
+  # Disable sidecar that creates duplicate datasources
+  sidecar:
+    datasources:
+      enabled: false
+    dashboards:
+      enabled: true
+  
   # Persistence
   persistence:
     enabled: false
