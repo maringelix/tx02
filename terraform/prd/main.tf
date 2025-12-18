@@ -97,6 +97,16 @@ module "acr" {
   tags = local.common_tags
 }
 
+# NGINX Ingress Controller Module
+module "nginx_ingress" {
+  count  = var.use_aks ? 1 : 0
+  source = "../modules/nginx-ingress"
+
+  replica_count = var.nginx_ingress_replicas
+
+  depends_on = [module.aks]
+}
+
 # VM Module (condicional)
 module "vm" {
   count  = var.use_aks ? 0 : 1

@@ -125,3 +125,9 @@ variable "tags" {
   description = "Tags para todos os recursos"
   type        = map(string)
 }
+
+variable "nginx_ingress_replicas" {
+  description = "Number of NGINX Ingress Controller replicas"
+  type        = number
+  default     = 2
+}

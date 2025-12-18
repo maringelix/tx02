@@ -14,6 +14,14 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.0"
     }
+    helm = {
+      source  = "hashicorp/helm"
+      version = "~> 2.12"
+    }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.25"
+    }
   }
 
   backend "azurerm" {
@@ -45,3 +53,19 @@ provider "azurerm" {
 }
 
 provider "azuread" {}
+
+provider "helm" {
+  kubernetes {
+    host                   = var.use_aks && length(module.aks) > 0 ? module.aks[0].kube_config.0.host : null
+    client_certificate     = var.use_aks && length(module.aks) > 0 ? base64decode(module.aks[0].kube_config.0.client_certificate) : null
+    client_key             = var.use_aks && length(module.aks) > 0 ? base64decode(module.aks[0].kube_config.0.client_key) : null
+    cluster_ca_certificate = var.use_aks && length(module.aks) > 0 ? base64decode(module.aks[0].kube_config.0.cluster_ca_certificate) : null
+  }
+}
+
+provider "kubernetes" {
+  host                   = var.use_aks && length(module.aks) > 0 ? module.aks[0].kube_config.0.host : null
+  client_certificate     = var.use_aks && length(module.aks) > 0 ? base64decode(module.aks[0].kube_config.0.client_certificate) : null
+  client_key             = var.use_aks && length(module.aks) > 0 ? base64decode(module.aks[0].kube_config.0.client_key) : null
+  cluster_ca_certificate = var.use_aks && length(module.aks) > 0 ? base64decode(module.aks[0].kube_config.0.cluster_ca_certificate) : null
+}

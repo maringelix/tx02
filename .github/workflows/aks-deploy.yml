@@ -56,12 +56,12 @@ jobs:
             --namespace=dx02 \
             --dry-run=client -o yaml | kubectl apply -f -
       
-      - name: Create GitHub Container Registry secret
+      - name: Create Azure Container Registry secret
         run: |
-          kubectl create secret docker-registry ghcr-secret \
-            --docker-server=ghcr.io \
-            --docker-username=${{ github.repository_owner }} \
-            --docker-password=${{ secrets.GHCR_PAT }} \
+          kubectl create secret docker-registry acr-secret \
+            --docker-server=tx02prdacr.azurecr.io \
+            --docker-username=${{ secrets.ACR_USERNAME }} \
+            --docker-password=${{ secrets.ACR_PASSWORD }} \
             --namespace=dx02 \
             --dry-run=client -o yaml | kubectl apply -f -
       
