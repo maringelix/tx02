@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dx02-metrics
+  namespace: dx02
+  labels:
+    app: dx02
+    metrics: "true"
+spec:
+  type: ClusterIP
+  ports:
+  - name: metrics
+    port: 3000
+    targetPort: 3000
+    protocol: TCP
+  selector:
+    app: dx02
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: dx02-monitor
+  namespace: monitoring
+  labels:
+    app: dx02
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app: dx02
+      metrics: "true"
+  namespaceSelector:
+    matchNames:
+    - dx02
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /api/health
+    scheme: http

@@ -1,0 +1,345 @@
+# kube-prometheus-stack Configuration for Azure AKS
+# Optimized for DX02 application monitoring
+
+# Prometheus Configuration
+prometheus:
+  prometheusSpec:
+    # Data retention
+    retention: 7d
+    retentionSize: 5GB
+    
+    # Storage
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: managed-csi  # Azure managed disk
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 10Gi
+    
+    # Resource limits
+    resources:
+      requests:
+        memory: 512Mi
+        cpu: 200m
+      limits:
+        memory: 2Gi
+        cpu: 1000m
+    
+    # Scrape configuration
+    scrapeInterval: 30s
+    evaluationInterval: 30s
+    
+    # Replicas for HA
+    replicas: 1
+    
+    # Service monitors
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    
+    # Additional scrape configs for DX02
+    additionalScrapeConfigs:
+    - job_name: 'dx02-application'
+      kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+          - dx02
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        action: keep
+        regex: dx02
+      - source_labels: [__meta_kubernetes_pod_ip]
+        target_label: __address__
+        replacement: '$1:3000'
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+
+# Grafana Configuration
+grafana:
+  enabled: true
+  
+  # Admin credentials
+  adminPassword: admin
+  
+  # Persistence
+  persistence:
+    enabled: true
+    storageClassName: managed-csi  # Azure managed disk
+    size: 5Gi
+  
+  # Service configuration
+  service:
+    type: ClusterIP  # Use port-forward or ingress
+    port: 80
+  
+  # Resources
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+      cpu: 500m
+  
+  # Data sources
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+      - name: Prometheus
+        type: prometheus
+        url: http://kube-prometheus-stack-prometheus:9090
+        access: proxy
+        isDefault: true
+        editable: true
+  
+  # Default dashboards
+  dashboards:
+    default:
+      dx02-overview:
+        json: |
+          {
+            "dashboard": {
+              "title": "DX02 Application Overview",
+              "panels": []
+            }
+          }
+  
+  # Plugins
+  plugins:
+  - grafana-piechart-panel
+  - grafana-clock-panel
+
+# Alertmanager Configuration
+alertmanager:
+  enabled: true
+  
+  config:
+    global:
+      resolve_timeout: 5m
+      slack_api_url: '${SLACK_WEBHOOK_URL}'
+    
+    route:
+      group_by: ['alertname', 'cluster', 'service']
+      group_wait: 10s
+      group_interval: 10s
+      repeat_interval: 12h
+      receiver: 'slack-notifications'
+      routes:
+      - match:
+          alertname: Watchdog
+        receiver: 'null'
+      - match:
+          severity: critical
+        receiver: 'slack-critical'
+        continue: true
+      - match:
+          severity: warning
+        receiver: 'slack-notifications'
+        continue: true
+    
+    receivers:
+    - name: 'null'
+    - name: 'slack-notifications'
+      slack_configs:
+      - channel: '#dx02-alerts'
+        title: '{{ .Status | toUpper }} - DX02 Alert'
+        text: |
+          *Alert:* {{ .CommonLabels.alertname }}
+          *Severity:* {{ .CommonLabels.severity }}
+          *Summary:* {{ .CommonAnnotations.summary }}
+          *Description:* {{ .CommonAnnotations.description }}
+          *Cluster:* tx02-prd-aks
+          *Namespace:* {{ .CommonLabels.namespace }}
+          {{ range .Alerts }}
+          *Pod:* {{ .Labels.pod }}
+          {{ end }}
+        send_resolved: true
+    
+    - name: 'slack-critical'
+      slack_configs:
+      - channel: '#dx02-critical'
+        title: ':fire: CRITICAL ALERT - DX02'
+        text: |
+          <!channel>
+          *Alert:* {{ .CommonLabels.alertname }}
+          *Severity:* CRITICAL
+          *Summary:* {{ .CommonAnnotations.summary }}
+          *Description:* {{ .CommonAnnotations.description }}
+          *Cluster:* tx02-prd-aks
+          *Namespace:* {{ .CommonLabels.namespace }}
+        send_resolved: true
+    
+    inhibit_rules:
+    - source_match:
+        severity: 'critical'
+      target_match:
+        severity: 'warning'
+      equal: ['alertname', 'cluster', 'service']
+  
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: managed-csi
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 2Gi
+    
+    resources:
+      requests:
+        memory: 128Mi
+        cpu: 50m
+      limits:
+        memory: 256Mi
+        cpu: 200m
+
+# Kube State Metrics
+kubeStateMetrics:
+  enabled: true
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 50m
+    limits:
+      memory: 256Mi
+      cpu: 200m
+
+# Node Exporter
+prometheus-node-exporter:
+  enabled: true
+  resources:
+    requests:
+      memory: 64Mi
+      cpu: 25m
+    limits:
+      memory: 128Mi
+      cpu: 100m
+
+# Prometheus Operator
+prometheusOperator:
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+      cpu: 500m
+  
+  # Admission webhooks
+  admissionWebhooks:
+    enabled: true
+    patch:
+      enabled: true
+      image:
+        repository: registry.k8s.io/ingress-nginx/kube-webhook-certgen
+        tag: v1.4.0
+
+# Default Prometheus Rules
+defaultRules:
+  create: true
+  rules:
+    alertmanager: true
+    etcd: false
+    configReloaders: true
+    general: true
+    k8s: true
+    kubeApiserverAvailability: true
+    kubeApiserverSlos: false
+    kubelet: true
+    kubeProxy: false
+    kubePrometheusGeneral: true
+    kubePrometheusNodeRecording: true
+    kubernetesApps: true
+    kubernetesResources: true
+    kubernetesStorage: true
+    kubernetesSystem: true
+    kubeScheduler: false
+    kubeStateMetrics: true
+    network: true
+    node: true
+    nodeExporterAlerting: true
+    nodeExporterRecording: true
+    prometheus: true
+    prometheusOperator: true
+
+# Custom alert rules for DX02
+additionalPrometheusRulesMap:
+  dx02-alerts:
+    groups:
+    - name: dx02_application
+      interval: 30s
+      rules:
+      # Application is down
+      - alert: DX02ApplicationDown
+        expr: up{job="dx02-application"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "DX02 application is down"
+          description: "DX02 application in namespace {{ $labels.namespace }} has been down for more than 2 minutes."
+      
+      # High memory usage
+      - alert: DX02HighMemoryUsage
+        expr: |
+          (container_memory_working_set_bytes{namespace="dx02",pod=~"dx02-.*"}
+          / container_spec_memory_limit_bytes{namespace="dx02",pod=~"dx02-.*"}) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DX02 pod has high memory usage"
+          description: "Pod {{ $labels.pod }} is using {{ $value | humanizePercentage }} of memory limit."
+      
+      # High CPU usage
+      - alert: DX02HighCPUUsage
+        expr: |
+          (rate(container_cpu_usage_seconds_total{namespace="dx02",pod=~"dx02-.*"}[5m])
+          / container_spec_cpu_quota{namespace="dx02",pod=~"dx02-.*"}) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DX02 pod has high CPU usage"
+          description: "Pod {{ $labels.pod }} is using {{ $value | humanizePercentage }} of CPU limit."
+      
+      # Pod restarts
+      - alert: DX02PodRestarting
+        expr: rate(kube_pod_container_status_restarts_total{namespace="dx02",pod=~"dx02-.*"}[15m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DX02 pod is restarting frequently"
+          description: "Pod {{ $labels.pod }} has restarted {{ $value }} times in the last 15 minutes."
+      
+      # Database connection issues
+      - alert: DX02DatabaseDisconnected
+        expr: dx02_database_connected == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "DX02 database connection lost"
+          description: "DX02 application cannot connect to Azure SQL Database."
+      
+      # Pod not ready
+      - alert: DX02PodNotReady
+        expr: kube_pod_status_ready{namespace="dx02",condition="true",pod=~"dx02-.*"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DX02 pod is not ready"
+          description: "Pod {{ $labels.pod }} has been in not ready state for more than 5 minutes."
+
+# Global settings
+global:
+  rbac:
+    create: true
