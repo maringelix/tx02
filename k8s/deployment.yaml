@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: dx02
-        image: ghcr.io/maringelix/dx02:latest
+        image: tx02prdacr.azurecr.io/dx02:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 3000
