@@ -49,10 +49,19 @@ jobs:
       - name: Create database secret
         run: |
           kubectl create secret generic dx02-db-secret \
-            --from-literal=host=${{ secrets.DB_HOST }} \
-            --from-literal=database=${{ secrets.DB_NAME }} \
-            --from-literal=username=${{ secrets.DB_USER }} \
-            --from-literal=password=${{ secrets.TF_VAR_db_password }} \
+            --from-literal=host=tx02-prd-sql.database.windows.net \
+            --from-literal=database=tx02-prd-db \
+            --from-literal=username=tx02 \
+            --from-literal=password=${{ secrets.AZURE_SQL_PASSWORD }} \
+            --namespace=dx02 \
+            --dry-run=client -o yaml | kubectl apply -f -
+      
+      - name: Create GitHub Container Registry secret
+        run: |
+          kubectl create secret docker-registry ghcr-secret \
+            --docker-server=ghcr.io \
+            --docker-username=${{ github.repository_owner }} \
+            --docker-password=${{ secrets.GHCR_PAT }} \
             --namespace=dx02 \
             --dry-run=client -o yaml | kubectl apply -f -
       

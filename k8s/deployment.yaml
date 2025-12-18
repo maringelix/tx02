@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dx02
+  labels:
+    app: dx02
+    tier: application
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: dx02
+  template:
+    metadata:
+      labels:
+        app: dx02
+        tier: application
+    spec:
+      containers:
+      - name: dx02
+        image: ghcr.io/maringelix/dx02:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3000
+          name: http
+          protocol: TCP
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "3000"
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: dx02-db-secret
+              key: host
+        - name: DB_PORT
+          value: "1433"
+        - name: DB_NAME
+          valueFrom:
+            secretKeyRef:
+              name: dx02-db-secret
+              key: database
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: dx02-db-secret
+              key: username
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: dx02-db-secret
+              key: password
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      imagePullSecrets:
+      - name: ghcr-secret
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dx02-db-secret
+type: Opaque
+stringData:
+  host: tx02-prd-sql.database.windows.net
+  database: tx02-prd-db
+  username: tx02
+  password: "" # Será substituído pelo workflow
