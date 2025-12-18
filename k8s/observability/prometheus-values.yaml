@@ -236,8 +236,14 @@ prometheusOperator:
       memory: 256Mi
       cpu: 200m
   
-  # Disable admission webhooks for faster startup
+  # Disable admission webhooks completely
   admissionWebhooks:
+    enabled: false
+    patch:
+      enabled: false
+  
+  # Disable TLS requirement
+  tls:
     enabled: false
 
 # Default Prometheus Rules
