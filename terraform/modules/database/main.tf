@@ -2,7 +2,7 @@
 resource "azurerm_mssql_server" "main" {
   name                         = "${var.project_name}-${var.environment}-sql"
   resource_group_name          = var.resource_group_name
-  location                     = var.location
+  location                     = "westus2"  # Free tier only available in westus2
   version                      = "12.0"
   administrator_login          = var.db_admin_username
   administrator_login_password = var.db_password
