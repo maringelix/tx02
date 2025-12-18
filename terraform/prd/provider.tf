@@ -56,16 +56,16 @@ provider "azuread" {}
 
 provider "helm" {
   kubernetes {
-    host                   = var.use_aks && length(module.aks) > 0 ? module.aks[0].kube_config.0.host : null
-    client_certificate     = var.use_aks && length(module.aks) > 0 ? base64decode(module.aks[0].kube_config.0.client_certificate) : null
-    client_key             = var.use_aks && length(module.aks) > 0 ? base64decode(module.aks[0].kube_config.0.client_key) : null
-    cluster_ca_certificate = var.use_aks && length(module.aks) > 0 ? base64decode(module.aks[0].kube_config.0.cluster_ca_certificate) : null
+    host                   = var.use_aks && length(module.aks) > 0 ? module.aks[0].host : null
+    client_certificate     = var.use_aks && length(module.aks) > 0 ? base64decode(module.aks[0].client_certificate) : null
+    client_key             = var.use_aks && length(module.aks) > 0 ? base64decode(module.aks[0].client_key) : null
+    cluster_ca_certificate = var.use_aks && length(module.aks) > 0 ? base64decode(module.aks[0].cluster_ca_certificate) : null
   }
 }
 
 provider "kubernetes" {
-  host                   = var.use_aks && length(module.aks) > 0 ? module.aks[0].kube_config.0.host : null
-  client_certificate     = var.use_aks && length(module.aks) > 0 ? base64decode(module.aks[0].kube_config.0.client_certificate) : null
-  client_key             = var.use_aks && length(module.aks) > 0 ? base64decode(module.aks[0].kube_config.0.client_key) : null
-  cluster_ca_certificate = var.use_aks && length(module.aks) > 0 ? base64decode(module.aks[0].kube_config.0.cluster_ca_certificate) : null
+  host                   = var.use_aks && length(module.aks) > 0 ? module.aks[0].host : null
+  client_certificate     = var.use_aks && length(module.aks) > 0 ? base64decode(module.aks[0].client_certificate) : null
+  client_key             = var.use_aks && length(module.aks) > 0 ? base64decode(module.aks[0].client_key) : null
+  cluster_ca_certificate = var.use_aks && length(module.aks) > 0 ? base64decode(module.aks[0].cluster_ca_certificate) : null
 }
