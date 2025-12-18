@@ -60,6 +60,7 @@ jobs:
           az provider register --namespace Microsoft.Compute --wait
           az provider register --namespace Microsoft.Storage --wait
           az provider register --namespace Microsoft.ContainerService --wait
+          az provider register --namespace Microsoft.ContainerRegistry --wait
           az provider register --namespace Microsoft.OperationalInsights --wait
           az provider register --namespace Microsoft.OperationsManagement --wait
           az provider register --namespace Microsoft.Sql --wait
@@ -68,9 +69,9 @@ jobs:
           az provider show -n Microsoft.Network --query "registrationState"
           az provider show -n Microsoft.Compute --query "registrationState"
           az provider show -n Microsoft.ContainerService --query "registrationState"
+          az provider show -n Microsoft.ContainerRegistry --query "registrationState"
           az provider show -n Microsoft.OperationalInsights --query "registrationState"
           az provider show -n Microsoft.DBforPostgreSQL --query "registrationState"
-          az provider show -n Microsoft.ContainerRegistry --query "registrationState"
       
       - name: Terraform Init
         run: terraform init
