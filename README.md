@@ -61,14 +61,42 @@
 
 Este projeto demonstra uma arquitetura cloud moderna na Azure com:
 - ✅ **Kubernetes (AKS)** - Cluster v1.32 com auto-scaling
-- ✅ **Azure Database for PostgreSQL** - Banco de dados gerenciado
+- ✅ **Azure SQL Database** - Banco de dados gerenciado (Basic SKU)
 - ✅ **Switch Mode** - Alterna entre VM e AKS dinamicamente
 - ✅ **CI/CD Completo** - Deploy automático via GitHub Actions
 - ✅ **Infraestrutura como Código** - 100% Terraform
 - ✅ **Alta Disponibilidade** - Multi-zone com load balancing
 - ✅ **Segurança** - RBAC, NSGs, Key Vault
 
-## � Quick Start
+---
+
+## ⚠️ **IMPORTANTE: Criação Manual do SQL Server**
+
+**Devido às limitações do Azure Free Trial, o Azure SQL Database deve ser criado manualmente via Portal Azure.**
+
+O free tier oferece um botão "Apply offer" que não pode ser automatizado via Terraform. Após a criação manual, o Terraform irá importar e gerenciar o recurso automaticamente.
+
+**Configuração necessária do SQL Server:**
+- **Nome:** `tx02-prd-sql`
+- **Localização:** West US 2 (ou mesma região do seu AKS)
+- **Autenticação:** Both SQL and Microsoft Entra authentication
+- **Admin login:** `tx02`
+- **Admin Entra:** Seu email Microsoft
+- **Firewall:** Allow Azure services = Yes
+- **Tags:** 
+  - Environment = production
+  - Project = tx02
+  - ManagedBy = terraform
+
+**Banco de dados necessário:**
+- **Nome:** `tx02-prd-db`
+- **Compute + storage:** Basic (2GB) - Apply free offer
+
+📖 Veja [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) para passos detalhados com screenshots.
+
+---
+
+## 📋 Quick Start
 
 ### 🎯 Método Recomendado: CI/CD (GitHub Actions)
 
