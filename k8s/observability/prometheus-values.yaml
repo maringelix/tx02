@@ -8,24 +8,24 @@ prometheus:
     retention: 7d
     retentionSize: 5GB
     
-    # Storage
-    storageSpec:
-      volumeClaimTemplate:
-        spec:
-          storageClassName: managed-csi  # Azure managed disk
-          accessModes: ["ReadWriteOnce"]
-          resources:
-            requests:
-              storage: 10Gi
+    # Storage - disabled for simplicity
+    # storageSpec:
+    #   volumeClaimTemplate:
+    #     spec:
+    #       storageClassName: managed-csi  # Azure managed disk
+    #       accessModes: ["ReadWriteOnce"]
+    #       resources:
+    #         requests:
+    #           storage: 10Gi
     
-    # Resource limits
+    # Resource limits - reduced
     resources:
       requests:
-        memory: 512Mi
-        cpu: 200m
+        memory: 256Mi
+        cpu: 100m
       limits:
-        memory: 2Gi
-        cpu: 1000m
+        memory: 1Gi
+        cpu: 500m
     
     # Scrape configuration
     scrapeInterval: 30s
@@ -67,23 +67,21 @@ grafana:
   
   # Persistence
   persistence:
-    enabled: true
-    storageClassName: managed-csi  # Azure managed disk
-    size: 5Gi
+    enabled: false
   
   # Service configuration
   service:
     type: ClusterIP  # Use port-forward or ingress
     port: 80
   
-  # Resources
+  # Resources - reduced
   resources:
     requests:
-      memory: 256Mi
-      cpu: 100m
+      memory: 128Mi
+      cpu: 50m
     limits:
-      memory: 512Mi
-      cpu: 500m
+      memory: 256Mi
+      cpu: 200m
   
   # Data sources
   datasources:
