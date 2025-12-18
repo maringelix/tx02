@@ -225,20 +225,15 @@ prometheus-node-exporter:
 prometheusOperator:
   resources:
     requests:
-      memory: 256Mi
-      cpu: 100m
+      memory: 128Mi
+      cpu: 50m
     limits:
-      memory: 512Mi
-      cpu: 500m
+      memory: 256Mi
+      cpu: 200m
   
-  # Admission webhooks
+  # Disable admission webhooks for faster startup
   admissionWebhooks:
-    enabled: true
-    patch:
-      enabled: true
-      image:
-        repository: registry.k8s.io/ingress-nginx/kube-webhook-certgen
-        tag: v1.4.0
+    enabled: false
 
 # Default Prometheus Rules
 defaultRules:
