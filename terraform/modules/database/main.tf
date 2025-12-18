@@ -1,6 +1,6 @@
 # Azure SQL Database Server
 resource "azurerm_mssql_server" "main" {
-  name                         = "${var.project_name}-${var.environment}-sqlserver"
+  name                         = "${var.project_name}-${var.environment}-sql"
   resource_group_name          = var.resource_group_name
   location                     = var.location
   version                      = "12.0"
