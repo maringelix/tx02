@@ -88,7 +88,25 @@ jobs:
             -var="project_name=tx02" \
             -var="environment=prd" \
             -var="location=eastus" \
+            -var="vnet_address_space=[\"10.0.0.0/16\"]" \
+            -var="subnet_aks=10.0.1.0/24" \
+            -var="subnet_database=10.0.2.0/24" \
+            -var="subnet_vm=10.0.3.0/24" \
+            -var="subnet_appgw=10.0.4.0/24" \
+            -var="use_aks=true" \
+            -var="aks_node_count=2" \
+            -var="aks_min_count=2" \
+            -var="aks_max_count=10" \
+            -var="aks_node_size=standard_dc2s_v3" \
+            -var="kubernetes_version=1.32" \
+            -var="db_sku_name=Basic" \
+            -var="db_storage_gb=2" \
+            -var="db_version=12.0" \
             -var="db_admin_username=tx02" \
+            -var="db_name=tx02-prd-db" \
+            -var="vm_size=Standard_D2s_v3" \
+            -var="vm_admin_username=azureuser" \
+            -var="tags={}" \
             'module.database[0].azurerm_mssql_server.main' \
             /subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/tx02-prd-rg/providers/Microsoft.Sql/servers/tx02-prd-sql || true
           
@@ -97,9 +115,25 @@ jobs:
             -var="project_name=tx02" \
             -var="environment=prd" \
             -var="location=eastus" \
-            -var="db_name=tx02-prd-db" \
+            -var="vnet_address_space=[\"10.0.0.0/16\"]" \
+            -var="subnet_aks=10.0.1.0/24" \
+            -var="subnet_database=10.0.2.0/24" \
+            -var="subnet_vm=10.0.3.0/24" \
+            -var="subnet_appgw=10.0.4.0/24" \
+            -var="use_aks=true" \
+            -var="aks_node_count=2" \
+            -var="aks_min_count=2" \
+            -var="aks_max_count=10" \
+            -var="aks_node_size=standard_dc2s_v3" \
+            -var="kubernetes_version=1.32" \
             -var="db_sku_name=Basic" \
             -var="db_storage_gb=2" \
+            -var="db_version=12.0" \
+            -var="db_admin_username=tx02" \
+            -var="db_name=tx02-prd-db" \
+            -var="vm_size=Standard_D2s_v3" \
+            -var="vm_admin_username=azureuser" \
+            -var="tags={}" \
             'module.database[0].azurerm_mssql_database.main' \
             /subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/tx02-prd-rg/providers/Microsoft.Sql/servers/tx02-prd-sql/databases/tx02-prd-db || true
         working-directory: ${{ steps.set-env.outputs.working_dir }}
