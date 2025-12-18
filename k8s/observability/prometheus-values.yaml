@@ -126,83 +126,32 @@ alertmanager:
   config:
     global:
       resolve_timeout: 5m
-      slack_api_url: '${SLACK_WEBHOOK_URL}'
     
     route:
       group_by: ['alertname', 'cluster', 'service']
       group_wait: 10s
       group_interval: 10s
       repeat_interval: 12h
-      receiver: 'slack-notifications'
+      receiver: 'null'  # Default receiver (no notifications)
       routes:
       - match:
           alertname: Watchdog
         receiver: 'null'
-      - match:
-          severity: critical
-        receiver: 'slack-critical'
-        continue: true
-      - match:
-          severity: warning
-        receiver: 'slack-notifications'
-        continue: true
     
     receivers:
     - name: 'null'
-    - name: 'slack-notifications'
-      slack_configs:
-      - channel: '#dx02-alerts'
-        title: '{{ .Status | toUpper }} - DX02 Alert'
-        text: |
-          *Alert:* {{ .CommonLabels.alertname }}
-          *Severity:* {{ .CommonLabels.severity }}
-          *Summary:* {{ .CommonAnnotations.summary }}
-          *Description:* {{ .CommonAnnotations.description }}
-          *Cluster:* tx02-prd-aks
-          *Namespace:* {{ .CommonLabels.namespace }}
-          {{ range .Alerts }}
-          *Pod:* {{ .Labels.pod }}
-          {{ end }}
-        send_resolved: true
-    
-    - name: 'slack-critical'
-      slack_configs:
-      - channel: '#dx02-critical'
-        title: ':fire: CRITICAL ALERT - DX02'
-        text: |
-          <!channel>
-          *Alert:* {{ .CommonLabels.alertname }}
-          *Severity:* CRITICAL
-          *Summary:* {{ .CommonAnnotations.summary }}
-          *Description:* {{ .CommonAnnotations.description }}
-          *Cluster:* tx02-prd-aks
-          *Namespace:* {{ .CommonLabels.namespace }}
-        send_resolved: true
-    
-    inhibit_rules:
-    - source_match:
-        severity: 'critical'
-      target_match:
-        severity: 'warning'
-      equal: ['alertname', 'cluster', 'service']
   
   alertmanagerSpec:
-    storage:
-      volumeClaimTemplate:
-        spec:
-          storageClassName: managed-csi
-          accessModes: ["ReadWriteOnce"]
-          resources:
-            requests:
-              storage: 2Gi
+    # Disable storage for simplicity
+    storage: {}
     
     resources:
       requests:
-        memory: 128Mi
-        cpu: 50m
+        memory: 64Mi
+        cpu: 25m
       limits:
-        memory: 256Mi
-        cpu: 200m
+        memory: 128Mi
+        cpu: 100m
 
 # Kube State Metrics
 kubeStateMetrics:
