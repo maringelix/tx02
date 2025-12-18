@@ -99,10 +99,11 @@ O free tier oferece um botão "Apply offer" que não pode ser automatizado via T
 ## 🏆 **Conquistas do Projeto**
 
 ### ✅ **Infraestrutura Provisionada**
-- ✅ **15+ recursos** Azure provisionados via Terraform
+- ✅ **18+ recursos** Azure provisionados via Terraform
 - ✅ **Multi-região:** AKS (eastus) + SQL (westus2)
+- ✅ **Azure Container Registry (ACR)** integrado ao AKS
 - ✅ **100% Free Tier** otimizado - $0.00/mês
-- ✅ **4m55s** tempo de provisioning (GitHub Actions)
+- ✅ **5-7min** tempo de provisioning (GitHub Actions)
 - ✅ **Import automático** de recursos criados manualmente
 
 ### 🎯 **Desafios Superados**
@@ -111,9 +112,11 @@ O free tier oferece um botão "Apply offer" que não pode ser automatizado via T
 - ✅ Cross-region architecture (Private Endpoint eastus ↔ westus2)
 - ✅ Terraform import automation com todas as variáveis
 - ✅ SQL free tier "Apply offer" workaround
+- ✅ ACR integration com AKS (AcrPull role automatic)
 
 ### 📚 **Documentação Completa**
 - 📖 [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) - Guia passo-a-passo com screenshots
+- 📖 [DX02_DEPLOYMENT_GUIDE.md](DX02_DEPLOYMENT_GUIDE.md) - Deploy da aplicação DX02 no AKS
 - 📖 [AZURE_FREE_TRIAL_LESSONS_LEARNED.md](AZURE_FREE_TRIAL_LESSONS_LEARNED.md) - **Lições aprendidas e troubleshooting completo**
 - 📖 [QUICKSTART_CICD.md](QUICKSTART_CICD.md) - Quick start CI/CD
 - 📖 [BOOTSTRAP_GUIDE.md](BOOTSTRAP_GUIDE.md) - Setup inicial
@@ -160,17 +163,22 @@ Para desenvolvimento local ou troubleshooting - veja seção completa no final d
 │               └─ Service (LoadBalancer)                     │
 │                           │                                  │
 │                    AKS Cluster v1.32                        │
-│                    ├─ Node 1 (Standard_B2s)                 │
+│                    ├─ Node 1 (Standard_D2s_v3)              │
 │                    │  └─ Pod dx02-app                       │
-│                    ├─ Node 2 (Standard_B2s)                 │
+│                    ├─ Node 2 (Standard_D2s_v3)              │
 │                    │  └─ Pod dx02-app                       │
-│                    ├─ Node 3 (Standard_B2s)                 │
 │                    └─ HPA (2-10 pods)                       │
+│                           ↓                                  │
+│              Azure Container Registry (ACR)                 │
+│              └─ tx02prdacr.azurecr.io                       │
+│                 └─ AcrPull role (auto-attached)             │
 │                                                              │
 │             ↓ (Network Security Groups)                     │
 │                                                              │
-│         Azure Database for PostgreSQL 17                    │
-│              (Flexible Server - Burstable)                   │
+│         Azure SQL Database (Free Tier)                      │
+│              (Basic - 2GB - westus2)                        │
+│              ├─ Private Endpoint (eastus)                   │
+│              └─ Cross-region connectivity                   │
 └─────────────────────────────────────────────────────────────┘
 ```
 

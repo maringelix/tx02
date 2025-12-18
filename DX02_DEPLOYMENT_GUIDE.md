@@ -27,22 +27,24 @@ Este guia documenta o processo completo de deployment da aplicação DX02 no clu
 └─────────────────────────────────────────────────────────────────┘
 
 ┌──────────────┐         ┌───────────────┐         ┌─────────────┐
-│   DX02 Repo  │────────▶│  Build Image  │────────▶│   GHCR.io   │
-│  (Code Push) │         │ GitHub Actions│         │  Container  │
-└──────────────┘         └───────────────┘         │  Registry   │
+│   DX02 Repo  │────────▶│  Build Image  │────────▶│     ACR     │
+│  (Code Push) │         │ GitHub Actions│         │ tx02prdacr  │
+└──────────────┘         └───────────────┘         │.azurecr.io  │
                                                     └──────┬──────┘
                                                            │
+                                        AcrPull Role ──────┤
+                                        (Automatic)        │
                                                            ▼
 ┌──────────────┐         ┌───────────────┐         ┌─────────────┐
 │   TX02 Repo  │────────▶│  Deploy AKS   │────────▶│ AKS Cluster │
 │  (Manifest)  │         │ GitHub Actions│         │  (eastus)   │
 └──────────────┘         └───────────────┘         └──────┬──────┘
                                                            │
-                                                           ▼
-                                                    ┌─────────────┐
-                                                    │ SQL Server  │
-                                                    │  (westus2)  │
-                                                    └─────────────┘
+                                             Private       ▼
+                                             Endpoint  ┌─────────────┐
+                                                    └─▶│ SQL Server  │
+                                                       │  (westus2)  │
+                                                       └─────────────┘
 ```
 
 ### Componentes
@@ -51,9 +53,9 @@ Este guia documenta o processo completo de deployment da aplicação DX02 no clu
 |------------|-------------|------------------|
 | **DX02** | [maringelix/dx02](https://github.com/maringelix/dx02) | Código da aplicação (React + Express) |
 | **TX02** | [maringelix/tx02](https://github.com/maringelix/tx02) | Infraestrutura (Terraform + K8s manifests) |
-| **GHCR** | GitHub Container Registry | Armazenamento de Docker images |
-| **AKS** | Azure Kubernetes Service | Execução dos containers |
-| **SQL** | Azure SQL Database | Banco de dados |
+| **ACR** | Azure Container Registry | Armazenamento de Docker images (tx02prdacr.azurecr.io) |
+| **AKS** | Azure Kubernetes Service | Execução dos containers (auto-autenticado no ACR) |
+| **SQL** | Azure SQL Database | Banco de dados (westus2 com Private Endpoint) |
 
 ---
 
@@ -73,19 +75,24 @@ Este guia documenta o processo completo de deployment da aplicação DX02 no clu
 ### GitHub Secrets Necessários
 
 #### DX02 Repository
-Não requer secrets adicionais - usa `GITHUB_TOKEN` automático para GHCR
+| Secret Name | Descrição | Valor |
+|-------------|-----------|-------|
+| `ACR_USERNAME` | ACR admin username | Obter via `terraform output -raw acr_admin_username` |
+| `ACR_PASSWORD` | ACR admin password | Obter via `terraform output -raw acr_admin_password` |
+
+**Como obter as credenciais do ACR:**
+```bash
+cd tx02/terraform/prd
+terraform output -raw acr_admin_username
+terraform output -raw acr_admin_password
+```
 
 #### TX02 Repository
 | Secret Name | Descrição | Valor |
 |-------------|-----------|-------|
 | `AZURE_SQL_PASSWORD` | Senha do SQL Server | Senha criada manualmente |
-| `GHCR_PAT` | GitHub Personal Access Token | Token com permissão `read:packages` |
 
-**Criar GHCR_PAT:**
-1. GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic)
-2. Generate new token (classic)
-3. Scopes: ✅ `read:packages`, ✅ `write:packages`
-4. Copiar token e adicionar ao TX02 secrets
+> **Nota:** Não precisa mais do `GHCR_PAT`! O AKS está integrado ao ACR via AcrPull role assignment.
 
 ---
 
@@ -500,6 +507,68 @@ Após deployment bem-sucedido:
 
 ---
 
+## � Azure Container Registry (ACR)
+
+### Benefícios do ACR vs GHCR
+
+| Característica | ACR (Azure) | GHCR (GitHub) |
+|----------------|-------------|---------------|
+| **Integração AKS** | ✅ Nativa (AcrPull role) | ❌ Requer imagePullSecrets |
+| **Latência** | ✅ Baixa (mesma região) | ❌ Alta (fora Azure) |
+| **Rate Limits** | ✅ Sem limites | ❌ 1000 pulls/hour |
+| **Transfer Cost** | ✅ Grátis (mesma região) | ❌ Pago (ingress) |
+| **Free Tier** | ✅ Basic SKU (50GB) | ✅ Ilimitado |
+
+### Credenciais do ACR
+
+```bash
+# Obter informações do ACR via Terraform outputs
+cd tx02/terraform/prd
+
+# Login server (para workflows)
+terraform output -raw acr_login_server
+# Saída: tx02prdacr.azurecr.io
+
+# Admin username (para GitHub Secrets)
+terraform output -raw acr_admin_username
+
+# Admin password (para GitHub Secrets)
+terraform output -raw acr_admin_password
+
+# ACR name (para comandos Azure CLI)
+terraform output -raw acr_name
+# Saída: tx02prdacr
+```
+
+### Login Manual no ACR
+
+```bash
+# Via Azure CLI (recomendado)
+az acr login --name tx02prdacr
+
+# Via Docker (usando admin credentials)
+docker login tx02prdacr.azurecr.io
+# Username: [obter via terraform output]
+# Password: [obter via terraform output]
+```
+
+### Integração AKS ↔ ACR
+
+O AKS já está **automaticamente autenticado** no ACR via:
+- **AcrPull role assignment** criado pelo Terraform
+- **Kubelet identity** do AKS tem permissão de pull
+- **Sem necessidade de imagePullSecrets** nos deployments
+
+Verificar integração:
+```bash
+# Listar role assignments do ACR
+az role assignment list --scope $(az acr show -n tx02prdacr --query id -o tsv)
+
+# Deve mostrar role "AcrPull" para o kubelet identity do AKS
+```
+
+---
+
 ## 📚 Referências
 
 ### Repositórios
@@ -514,7 +583,8 @@ Após deployment bem-sucedido:
 ### Azure Docs
 - [AKS Documentation](https://learn.microsoft.com/en-us/azure/aks/)
 - [Azure SQL Database](https://learn.microsoft.com/en-us/azure/azure-sql/database/)
-- [GitHub Container Registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)
+- [Azure Container Registry](https://learn.microsoft.com/en-us/azure/container-registry/)
+- [Authenticate with ACR from AKS](https://learn.microsoft.com/en-us/azure/aks/cluster-container-registry-integration)
 
 ---
 
