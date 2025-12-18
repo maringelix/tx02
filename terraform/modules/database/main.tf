@@ -1,36 +1,30 @@
-# Azure Database for PostgreSQL - Flexible Server
-resource "azurerm_postgresql_flexible_server" "main" {
-  name                = "${var.project_name}-${var.environment}-db"
-  resource_group_name = var.resource_group_name
-  location            = var.location
+# Azure SQL Database Server
+resource "azurerm_mssql_server" "main" {
+  name                         = "${var.project_name}-${var.environment}-sqlserver"
+  resource_group_name          = var.resource_group_name
+  location                     = var.location
+  version                      = "12.0"
+  administrator_login          = var.db_admin_username
+  administrator_login_password = var.db_password
 
-  version             = var.db_version
-  delegated_subnet_id = var.subnet_id
-  private_dns_zone_id = azurerm_private_dns_zone.postgres.id
+  minimum_tls_version = "1.2"
 
-  administrator_login    = var.db_admin_username
-  administrator_password = var.db_password
-
-  zone = "1"
-
-  storage_mb = var.db_storage_gb * 1024
-
-  sku_name = var.db_sku_name
-
-  backup_retention_days         = 7
-  geo_redundant_backup_enabled  = false
-  public_network_access_enabled = false
+  public_network_access_enabled = true
 
   tags = var.tags
-
-  depends_on = [azurerm_private_dns_zone_virtual_network_link.postgres]
 }
 
-# Data source para obter informações da subnet
-data "azurerm_subnet" "database" {
-  name                 = split("/", var.subnet_id)[10]
-  virtual_network_name = split("/", var.subnet_id)[8]
-  resource_group_name  = var.resource_group_name
+# Azure SQL Database
+resource "azurerm_mssql_database" "main" {
+  name           = var.db_name
+  server_id      = azurerm_mssql_server.main.id
+  collation      = "SQL_Latin1_General_CP1_CI_AS"
+  license_type   = "LicenseIncluded"
+  max_size_gb    = var.db_storage_gb
+  sku_name       = var.db_sku_name
+  zone_redundant = false
+
+  tags = var.tags
 }
 
 # Data source para obter a VNet
@@ -39,49 +33,52 @@ data "azurerm_virtual_network" "main" {
   resource_group_name = var.resource_group_name
 }
 
-# Private DNS Zone para PostgreSQL
-resource "azurerm_private_dns_zone" "postgres" {
-  name                = "${var.project_name}-${var.environment}-pdz.postgres.database.azure.com"
+# Private DNS Zone para SQL Database
+resource "azurerm_private_dns_zone" "sql" {
+  name                = "privatelink.database.windows.net"
   resource_group_name = var.resource_group_name
 
   tags = var.tags
 }
 
 # Link entre Private DNS Zone e VNet
-resource "azurerm_private_dns_zone_virtual_network_link" "postgres" {
-  name                  = "${var.project_name}-${var.environment}-pdz-link"
-  private_dns_zone_name = azurerm_private_dns_zone.postgres.name
+resource "azurerm_private_dns_zone_virtual_network_link" "sql" {
+  name                  = "${var.project_name}-${var.environment}-sql-dns-link"
+  private_dns_zone_name = azurerm_private_dns_zone.sql.name
   virtual_network_id    = data.azurerm_virtual_network.main.id
   resource_group_name   = var.resource_group_name
 
   tags = var.tags
 }
 
-# Database
-resource "azurerm_postgresql_flexible_server_database" "main" {
-  name      = var.db_name
-  server_id = azurerm_postgresql_flexible_server.main.id
-  charset   = "UTF8"
-  collation = "en_US.utf8"
+# Private Endpoint para SQL Server
+resource "azurerm_private_endpoint" "sql" {
+  name                = "${var.project_name}-${var.environment}-sql-pe"
+  location            = var.location
+  resource_group_name = var.resource_group_name
+  subnet_id           = var.subnet_id
+
+  private_service_connection {
+    name                           = "${var.project_name}-${var.environment}-sql-psc"
+    private_connection_resource_id = azurerm_mssql_server.main.id
+    is_manual_connection           = false
+    subresource_names              = ["sqlServer"]
+  }
+
+  private_dns_zone_group {
+    name                 = "default"
+    private_dns_zone_ids = [azurerm_private_dns_zone.sql.id]
+  }
+
+  tags = var.tags
+
+  depends_on = [azurerm_private_dns_zone_virtual_network_link.sql]
 }
 
-# Firewall rule para permitir conexões do Azure
-resource "azurerm_postgresql_flexible_server_firewall_rule" "allow_azure" {
+# Firewall rule para permitir serviços Azure
+resource "azurerm_mssql_firewall_rule" "allow_azure" {
   name             = "AllowAzureServices"
-  server_id        = azurerm_postgresql_flexible_server.main.id
+  server_id        = azurerm_mssql_server.main.id
   start_ip_address = "0.0.0.0"
   end_ip_address   = "0.0.0.0"
-}
-
-# Configurações do servidor
-resource "azurerm_postgresql_flexible_server_configuration" "max_connections" {
-  name      = "max_connections"
-  server_id = azurerm_postgresql_flexible_server.main.id
-  value     = "100"
-}
-
-resource "azurerm_postgresql_flexible_server_configuration" "shared_buffers" {
-  name      = "shared_buffers"
-  server_id = azurerm_postgresql_flexible_server.main.id
-  value     = "32768"
 }

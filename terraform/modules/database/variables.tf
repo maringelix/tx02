@@ -29,8 +29,9 @@ variable "db_storage_gb" {
 }
 
 variable "db_version" {
-  description = "Versão do PostgreSQL"
+  description = "Versão do SQL Server (sempre 12.0)"
   type        = string
+  default     = "12.0"
 }
 
 variable "db_admin_username" {

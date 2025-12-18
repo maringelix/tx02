@@ -88,9 +88,9 @@ jobs:
             -var="aks_node_size=Standard_D2s_v3" \
             -var="kubernetes_version=1.32" \
             -var="tags={}" \
-          -var="db_sku_name=B_Standard_B1ms" \
-            -var="db_storage_gb=32" \
-            -var="db_version=16" \
+          -var="db_sku_name=Basic" \
+          -var="db_storage_gb=2" \
+          -var="db_version=12.0" \
             -var="db_admin_username=dx02admin" \
             -var="db_name=dx02_db" \
             -var="vm_size=Standard_D2s_v3" \

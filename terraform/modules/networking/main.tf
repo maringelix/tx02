@@ -27,15 +27,7 @@ resource "azurerm_subnet" "database" {
 
   service_endpoints = ["Microsoft.Sql"]
 
-  delegation {
-    name = "fs"
-    service_delegation {
-      name = "Microsoft.DBforPostgreSQL/flexibleServers"
-      actions = [
-        "Microsoft.Network/virtualNetworks/subnets/join/action",
-      ]
-    }
-  }
+  # SQL Database usa Private Endpoint, não precisa de delegação
 }
 
 # Subnet para VM
