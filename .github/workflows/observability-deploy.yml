@@ -121,7 +121,7 @@ jobs:
           --namespace monitoring \
           --values k8s/observability/prometheus-values.yaml \
           --set grafana.adminPassword="${{ secrets.GRAFANA_ADMIN_PASSWORD || 'admin' }}" \
-          --set alertmanager.slackWebhookUrl="${SLACK_WEBHOOK}" \
+          --set alertmanager.config.global.slack_api_url="${SLACK_WEBHOOK}" \
           --timeout=5m
         
         echo "✅ Helm chart installed. Pods will start in background."

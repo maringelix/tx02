@@ -126,7 +126,6 @@ alertmanager:
   config:
     global:
       resolve_timeout: 5m
-      slack_api_url: '{{ .Values.alertmanager.slackWebhookUrl }}'
     
     route:
       group_by: ['alertname', 'cluster', 'service']
@@ -183,9 +182,6 @@ alertmanager:
       target_match:
         severity: 'warning'
       equal: ['alertname', 'cluster', 'service']
-  
-  # Slack webhook URL (set via --set or GitHub secret)
-  slackWebhookUrl: ""
   
   alertmanagerSpec:
     # Disable storage for simplicity
