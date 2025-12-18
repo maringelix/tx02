@@ -42,3 +42,8 @@ output "host" {
   value       = azurerm_kubernetes_cluster.main.kube_config[0].host
   sensitive   = true
 }
+
+output "kubelet_identity_object_id" {
+  description = "Kubelet managed identity object ID (for ACR integration)"
+  value       = azurerm_kubernetes_cluster.main.kubelet_identity[0].object_id
+}

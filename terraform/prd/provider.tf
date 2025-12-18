@@ -39,7 +39,7 @@ provider "azurerm" {
   # Use Service Principal authentication via environment variables
   # ARM_CLIENT_ID, ARM_CLIENT_SECRET, ARM_SUBSCRIPTION_ID, ARM_TENANT_ID
   skip_provider_registration = true
-  use_cli                    = false
+  use_cli                    = true  # Temporarily using CLI for ACR creation
   use_msi                    = false
   use_oidc                   = false
 }

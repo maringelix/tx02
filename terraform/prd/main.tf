@@ -78,6 +78,25 @@ module "aks" {
   tags = local.common_tags
 }
 
+# Azure Container Registry Module
+module "acr" {
+  count  = var.use_aks ? 1 : 0
+  source = "../modules/acr"
+
+  project_name        = var.project_name
+  environment         = var.environment
+  location            = var.location
+  resource_group_name = azurerm_resource_group.main.name
+
+  sku           = var.acr_sku
+  admin_enabled = true
+
+  # Attach ACR to AKS (grants AcrPull permission)
+  aks_principal_id = length(module.aks) > 0 ? module.aks[0].kubelet_identity_object_id : null
+
+  tags = local.common_tags
+}
+
 # VM Module (condicional)
 module "vm" {
   count  = var.use_aks ? 0 : 1

@@ -68,6 +68,12 @@ variable "kubernetes_version" {
   type        = string
 }
 
+variable "acr_sku" {
+  description = "ACR SKU tier (Basic, Standard, Premium)"
+  type        = string
+  default     = "Basic"
+}
+
 variable "db_sku_name" {
   description = "SKU do Azure Database"
   type        = string

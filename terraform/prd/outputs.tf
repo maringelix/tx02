@@ -64,6 +64,29 @@ output "aks_get_credentials_command" {
   value       = var.use_aks ? "az aks get-credentials --resource-group ${azurerm_resource_group.main.name} --name ${module.aks[0].cluster_name}" : null
 }
 
+# ACR (se ativo)
+output "acr_login_server" {
+  description = "ACR login server URL"
+  value       = var.use_aks && length(module.acr) > 0 ? module.acr[0].login_server : null
+}
+
+output "acr_name" {
+  description = "ACR name"
+  value       = var.use_aks && length(module.acr) > 0 ? module.acr[0].name : null
+}
+
+output "acr_admin_username" {
+  description = "ACR admin username"
+  value       = var.use_aks && length(module.acr) > 0 ? module.acr[0].admin_username : null
+  sensitive   = true
+}
+
+output "acr_admin_password" {
+  description = "ACR admin password"
+  value       = var.use_aks && length(module.acr) > 0 ? module.acr[0].admin_password : null
+  sensitive   = true
+}
+
 # VM (se ativo)
 output "vm_public_ip" {
   description = "IP público da VM"
