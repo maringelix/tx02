@@ -1,13 +1,13 @@
 # TX02 - Infraestrutura Azure com Terraform e CI/CD
 
-🎉 **Infraestrutura de produção completa na Azure com AKS Kubernetes, Azure Database for PostgreSQL, VM, Application Gateway, e CI/CD totalmente automatizado.**
+🎉 **Infraestrutura de produção completa na Azure com AKS Kubernetes, Azure SQL Database, networking, e CI/CD totalmente automatizado - 100% otimizado para Azure Free Trial ($0.00/mês).**
 
 [![AKS](https://img.shields.io/badge/AKS-v1.32-blue.svg)](https://azure.microsoft.com/en-us/services/kubernetes-service/)
 [![Terraform](https://img.shields.io/badge/Terraform-1.6.0-purple.svg)](https://www.terraform.io/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-blue.svg)](https://www.postgresql.org/)
+[![Azure SQL](https://img.shields.io/badge/Azure%20SQL-Database-blue.svg)](https://azure.microsoft.com/en-us/products/azure-sql/database/)
 [![GitHub Actions](https://img.shields.io/badge/CI%2FCD-Workflows-green.svg)](https://github.com/features/actions)
-[![Prometheus](https://img.shields.io/badge/Prometheus-Latest-orange.svg)](https://prometheus.io/)
-[![Grafana](https://img.shields.io/badge/Grafana-Latest-orange.svg)](https://grafana.com/)
+[![Free Tier](https://img.shields.io/badge/Azure-Free%20Trial%20Optimized-success.svg)](https://azure.microsoft.com/en-us/free/)
+[![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen.svg)](https://github.com/maringelix/tx02)
 
 ---
 
@@ -93,6 +93,32 @@ O free tier oferece um botão "Apply offer" que não pode ser automatizado via T
 - **Compute + storage:** Basic (2GB) - Apply free offer
 
 📖 Veja [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) para passos detalhados com screenshots.
+
+---
+
+## 🏆 **Conquistas do Projeto**
+
+### ✅ **Infraestrutura Provisionada**
+- ✅ **15+ recursos** Azure provisionados via Terraform
+- ✅ **Multi-região:** AKS (eastus) + SQL (westus2)
+- ✅ **100% Free Tier** otimizado - $0.00/mês
+- ✅ **4m55s** tempo de provisioning (GitHub Actions)
+- ✅ **Import automático** de recursos criados manualmente
+
+### 🎯 **Desafios Superados**
+- ✅ PostgreSQL → Azure SQL Database migration (Free Trial restriction)
+- ✅ VM size compatibility (standard_dc2s_v3 apenas em eastus)
+- ✅ Cross-region architecture (Private Endpoint eastus ↔ westus2)
+- ✅ Terraform import automation com todas as variáveis
+- ✅ SQL free tier "Apply offer" workaround
+
+### 📚 **Documentação Completa**
+- 📖 [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) - Guia passo-a-passo com screenshots
+- 📖 [AZURE_FREE_TRIAL_LESSONS_LEARNED.md](AZURE_FREE_TRIAL_LESSONS_LEARNED.md) - **Lições aprendidas e troubleshooting completo**
+- 📖 [QUICKSTART_CICD.md](QUICKSTART_CICD.md) - Quick start CI/CD
+- 📖 [BOOTSTRAP_GUIDE.md](BOOTSTRAP_GUIDE.md) - Setup inicial
+
+> 💡 **Novo!** Leia [AZURE_FREE_TRIAL_LESSONS_LEARNED.md](AZURE_FREE_TRIAL_LESSONS_LEARNED.md) para entender todas as limitações do Azure Free Trial, soluções implementadas, e a jornada completa de troubleshooting!
 
 ---
 
