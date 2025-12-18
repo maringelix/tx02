@@ -106,6 +106,14 @@ O free tier oferece um botão "Apply offer" que não pode ser automatizado via T
 - ✅ **5-7min** tempo de provisioning (GitHub Actions)
 - ✅ **Import automático** de recursos criados manualmente
 
+### 📊 **Observabilidade**
+- ✅ **Prometheus** - Coleta de métricas do cluster e aplicação
+- ✅ **Grafana** - 28 dashboards pré-configurados
+- ✅ **Alertmanager** - Alertas integrados com Slack
+- ✅ **Node Exporter** - Métricas de sistema dos nodes
+- ✅ **Kube State Metrics** - Métricas do Kubernetes
+- ✅ **ServiceMonitor** - Scraping customizado para DX02
+
 ### 🎯 **Desafios Superados**
 - ✅ PostgreSQL → Azure SQL Database migration (Free Trial restriction)
 - ✅ VM size compatibility (standard_dc2s_v3 apenas em eastus)
@@ -113,6 +121,7 @@ O free tier oferece um botão "Apply offer" que não pode ser automatizado via T
 - ✅ Terraform import automation com todas as variáveis
 - ✅ SQL free tier "Apply offer" workaround
 - ✅ ACR integration com AKS (AcrPull role automatic)
+- ✅ Observability stack completa (Prometheus + Grafana + Alertmanager)
 
 ### 📚 **Documentação Completa**
 - 📖 [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) - Guia passo-a-passo com screenshots
@@ -120,6 +129,10 @@ O free tier oferece um botão "Apply offer" que não pode ser automatizado via T
 - 📖 [AZURE_FREE_TRIAL_LESSONS_LEARNED.md](AZURE_FREE_TRIAL_LESSONS_LEARNED.md) - **Lições aprendidas e troubleshooting completo**
 - 📖 [QUICKSTART_CICD.md](QUICKSTART_CICD.md) - Quick start CI/CD
 - 📖 [BOOTSTRAP_GUIDE.md](BOOTSTRAP_GUIDE.md) - Setup inicial
+- 📊 **Observabilidade:**
+  - [k8s/observability/README.md](k8s/observability/README.md) - Arquitetura completa
+  - [k8s/observability/ACCESS.md](k8s/observability/ACCESS.md) - Guia de acesso ao Grafana
+  - [k8s/observability/IMPLEMENTATION.md](k8s/observability/IMPLEMENTATION.md) - Detalhes técnicos da implementação
 
 > 💡 **Novo!** Leia [AZURE_FREE_TRIAL_LESSONS_LEARNED.md](AZURE_FREE_TRIAL_LESSONS_LEARNED.md) para entender todas as limitações do Azure Free Trial, soluções implementadas, e a jornada completa de troubleshooting!
 
