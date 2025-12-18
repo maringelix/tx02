@@ -38,20 +38,23 @@
 
 ---
 
-## 📊 **Code Quality**
+## 📊 **Code Quality** [![SonarCloud](https://img.shields.io/badge/SonarCloud-Analyzed-blue.svg)](https://sonarcloud.io/organizations/maringelix/projects)
 
 <div align="center">
 
 | Metric | Rating | Issues | Status |
 |--------|--------|--------|--------|
-| **Security** | 🟢 A | 0 | Excellent |
-| **Reliability** | 🟢 A | 0 | Excellent |
-| **Maintainability** | 🟢 A | 0 | Excellent |
-| **Coverage** | 🟡 Terraform Tests | - | Infrastructure validation |
+| **Security** | 🟡 C | 3 | Minor issues |
+| **Reliability** | 🟢 A | 2 | Excellent |
+| **Maintainability** | 🟢 A | 6 | Clean code |
+| **Hotspots Reviewed** | 🔴 E | 0.0% | Requires review |
+| **Coverage** | 🟡 N/A | - | Infrastructure validation |
 | **Duplications** | 🟢 0.0% | 0 | No duplicates |
-| **Lines of Code** | - | 2,500+ | Terraform, YAML |
+| **Lines of Code** | - | 3,300+ | Terraform, YAML |
 
-**Quality Gate:** ✅ **PASSED**
+**Quality Gate:** 📝 **Not Computed** (análise inicial)
+
+📊 [Ver análise completa no SonarCloud →](https://sonarcloud.io/organizations/maringelix/projects)
 
 </div>
 
@@ -133,6 +136,8 @@ O free tier oferece um botão "Apply offer" que não pode ser automatizado via T
   - [k8s/observability/README.md](k8s/observability/README.md) - Arquitetura completa
   - [k8s/observability/ACCESS.md](k8s/observability/ACCESS.md) - Guia de acesso ao Grafana
   - [k8s/observability/IMPLEMENTATION.md](k8s/observability/IMPLEMENTATION.md) - Detalhes técnicos da implementação
+- 🔍 **Qualidade de Código:**
+  - [SONARQUBE.md](SONARQUBE.md) - Análise de qualidade com SonarCloud
 
 > 💡 **Novo!** Leia [AZURE_FREE_TRIAL_LESSONS_LEARNED.md](AZURE_FREE_TRIAL_LESSONS_LEARNED.md) para entender todas as limitações do Azure Free Trial, soluções implementadas, e a jornada completa de troubleshooting!
 
