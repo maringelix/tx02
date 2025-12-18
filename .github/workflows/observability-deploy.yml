@@ -1,4 +1,4 @@
-name: Deploy Observability Stack
+name: 📊 Deploy Observability Stack
 
 on:
   workflow_dispatch:
