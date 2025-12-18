@@ -61,8 +61,7 @@ jobs:
           az provider register --namespace Microsoft.Storage --wait
           az provider register --namespace Microsoft.ContainerService --wait
           az provider register --namespace Microsoft.OperationalInsights --wait
-          az provider register --namespace Microsoft.OperationsManagement --wait
-          az provider register --namespace Microsoft.DBforPostgreSQL --wait
+          az provider register --namespace Microsoft.OperationsManagement --wait        az provider register --namespace Microsoft.Sql --wait          az provider register --namespace Microsoft.DBforPostgreSQL --wait
           
           echo "Verifying provider registration status..."
           az provider show -n Microsoft.Network --query "registrationState"
@@ -96,7 +95,7 @@ jobs:
             -var="aks_node_count=2" \
             -var="aks_min_count=2" \
             -var="aks_max_count=10" \
-            -var="aks_node_size=Standard_D2s_v3" \
+            -var="aks_node_size=standard_dc2s_v3" \
             -var="kubernetes_version=1.32" \
           -var="db_sku_name=Basic" \
           -var="db_storage_gb=2" \
