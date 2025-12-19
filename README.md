@@ -71,6 +71,8 @@ Este projeto demonstra uma arquitetura cloud moderna na Azure com:
 - ✅ **Alta Disponibilidade** - Multi-zone com load balancing
 - ✅ **Segurança** - RBAC, NSGs, Key Vault
 
+🚀 **Aplicação de Exemplo:** [DX02 - Fullstack Application](https://github.com/maringelix/dx02) - Aplicação React + Node.js rodando nesta infraestrutura
+
 ---
 
 ## ⚠️ **IMPORTANTE: Criação Manual do SQL Server**
