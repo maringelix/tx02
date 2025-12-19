@@ -1,0 +1,19 @@
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sRequireResources
+metadata:
+  name: require-container-resources
+spec:
+  enforcementAction: dryrun
+  match:
+    kinds:
+      - apiGroups: ["apps"]
+        kinds: ["Deployment", "StatefulSet", "DaemonSet"]
+    namespaces:
+      - dx02
+  parameters:
+    limits:
+      - cpu
+      - memory
+    requests:
+      - cpu
+      - memory

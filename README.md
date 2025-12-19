@@ -114,10 +114,19 @@ O free tier oferece um botão "Apply offer" que não pode ser automatizado via T
 ### 📊 **Observabilidade**
 - ✅ **Prometheus** - Coleta de métricas do cluster e aplicação
 - ✅ **Grafana** - 28 dashboards pré-configurados
-- ✅ **Alertmanager** - Alertas integrados com Slack
+- ✅ **Alertmanager** - Alertas integrados com Slack (#dx02-alerts, #dx02-critical)
 - ✅ **Node Exporter** - Métricas de sistema dos nodes
 - ✅ **Kube State Metrics** - Métricas do Kubernetes
 - ✅ **ServiceMonitor** - Scraping customizado para DX02
+
+### 🔒 **Segurança**
+- ✅ **Trivy** - Container vulnerability scanning integrado no CI/CD
+- ✅ **OPA Gatekeeper** - Policy enforcement no cluster AKS
+  - Deny privileged containers
+  - Require resource limits
+  - Require labels para rastreabilidade
+- ✅ **SonarCloud** - Code quality e security analysis
+- ✅ **GitHub Security** - Dependabot e code scanning habilitados
 
 ### 🎯 **Desafios Superados**
 - ✅ PostgreSQL → Azure SQL Database migration (Free Trial restriction)
@@ -140,6 +149,9 @@ O free tier oferece um botão "Apply offer" que não pode ser automatizado via T
   - [k8s/observability/IMPLEMENTATION.md](k8s/observability/IMPLEMENTATION.md) - Detalhes técnicos da implementação
 - 🔍 **Qualidade de Código:**
   - [SONARQUBE.md](SONARQUBE.md) - Análise de qualidade com SonarCloud
+- 🔒 **Segurança:**
+  - [SECURITY_SCANNING.md](SECURITY_SCANNING.md) - Trivy e OPA Gatekeeper
+  - [k8s/policies/README.md](k8s/policies/README.md) - Políticas do Gatekeeper
 
 > 💡 **Novo!** Leia [AZURE_FREE_TRIAL_LESSONS_LEARNED.md](AZURE_FREE_TRIAL_LESSONS_LEARNED.md) para entender todas as limitações do Azure Free Trial, soluções implementadas, e a jornada completa de troubleshooting!
 
@@ -638,6 +650,8 @@ Veja [TROUBLESHOOTING.md](TROUBLESHOOTING.md) para mais detalhes.
 - [x] **✅ Alertas Avançados**: Slack integration configurada (#dx02-alerts, #dx02-critical)
 - [x] **✅ Code Quality**: SonarCloud implementado e analisando código
 - [x] **✅ Multi-Region**: AKS (eastus) + SQL Database (westus2) com Private Endpoint
+- [x] **✅ Container Security**: Trivy scan integrado no pipeline Docker (CVE detection)
+- [x] **✅ Policy Enforcement**: OPA Gatekeeper implementado com 3 policies
 - [x] **✅ CI/CD Completo**: GitHub Actions com deploy automático (Terraform + AKS)
 - [x] **✅ Container Registry**: ACR integrado com AKS (AcrPull role automático)
 - [x] **✅ SQL Database Free Tier**: Workaround para limitação do free tier implementado

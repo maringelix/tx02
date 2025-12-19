@@ -1,0 +1,18 @@
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sRequiredLabels
+metadata:
+  name: require-app-label
+spec:
+  enforcementAction: dryrun
+  match:
+    kinds:
+      - apiGroups: ["apps"]
+        kinds: ["Deployment", "StatefulSet", "DaemonSet"]
+      - apiGroups: [""]
+        kinds: ["Service", "Pod"]
+    namespaces:
+      - dx02
+  parameters:
+    labels:
+      - key: app
+        allowedRegex: "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
