@@ -82,6 +82,37 @@ jobs:
           helm repo update
           echo "✅ Repository added and updated"
       
+      - name: 🧹 Cleanup Previous Installation
+        if: github.event.inputs.action == 'install'
+        run: |
+          echo "🧹 Cleaning up any previous Gatekeeper installation..."
+          
+          # Delete namespace (will hang if resources aren't cleaned)
+          kubectl delete namespace gatekeeper-system --ignore-not-found=true --timeout=30s || true
+          
+          # Force cleanup of cluster-scoped resources
+          echo "Removing ClusterRoles..."
+          kubectl delete clusterrole -l gatekeeper.sh/system=yes --ignore-not-found=true || true
+          kubectl delete clusterrole gatekeeper-manager-role --ignore-not-found=true || true
+          
+          echo "Removing ClusterRoleBindings..."
+          kubectl delete clusterrolebinding -l gatekeeper.sh/system=yes --ignore-not-found=true || true
+          kubectl delete clusterrolebinding gatekeeper-manager-rolebinding --ignore-not-found=true || true
+          
+          echo "Removing ValidatingWebhookConfigurations..."
+          kubectl delete validatingwebhookconfiguration gatekeeper-validating-webhook-configuration --ignore-not-found=true || true
+          
+          echo "Removing MutatingWebhookConfigurations..."
+          kubectl delete mutatingwebhookconfiguration gatekeeper-mutating-webhook-configuration --ignore-not-found=true || true
+          
+          echo "Removing CRDs..."
+          kubectl get crd -o name | grep gatekeeper | xargs -r kubectl delete --ignore-not-found=true || true
+          
+          echo "Waiting for cleanup to complete..."
+          sleep 10
+          
+          echo "✅ Cleanup complete"
+      
       - name: 📁 Create Gatekeeper Namespace
         if: github.event.inputs.action == 'install'
         run: |
