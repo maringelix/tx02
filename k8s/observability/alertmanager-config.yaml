@@ -1,0 +1,73 @@
+global:
+  resolve_timeout: 5m
+
+inhibit_rules:
+- equal:
+  - alertname
+  - cluster
+  - service
+  source_match:
+    severity: critical
+  target_match:
+    severity: warning
+
+receivers:
+- name: "null"
+
+- name: slack-notifications
+  slack_configs:
+  - channel: '#dx02-alerts'
+    send_resolved: true
+    text: |
+      *Alert:* {{ .CommonLabels.alertname }}
+      *Severity:* {{ .CommonLabels.severity }}
+      *Summary:* {{ .CommonAnnotations.summary }}
+      *Description:* {{ .CommonAnnotations.description }}
+      *Cluster:* tx02-prd-aks
+      *Namespace:* {{ .CommonLabels.namespace }}
+    title: '{{ .Status | toUpper }} - DX02 Alert'
+
+- name: slack-critical
+  slack_configs:
+  - channel: '#dx02-critical'
+    send_resolved: true
+    text: |
+      <!channel>
+      *Alert:* {{ .CommonLabels.alertname }}
+      *Severity:* CRITICAL
+      *Summary:* {{ .CommonAnnotations.summary }}
+      *Description:* {{ .CommonAnnotations.description }}
+      *Cluster:* tx02-prd-aks
+      *Namespace:* {{ .CommonLabels.namespace }}
+    title: ':fire: CRITICAL ALERT - DX02'
+
+route:
+  group_by:
+  - alertname
+  - cluster
+  - service
+  group_interval: 10s
+  group_wait: 10s
+  receiver: slack-notifications
+  repeat_interval: 12h
+  routes:
+  # Alertas técnicos que NÃO devem ir pro Slack
+  - match:
+      alertname: Watchdog
+    receiver: "null"
+  - match:
+      alertname: InfoInhibitor
+    receiver: "null"
+  
+  # Alertas reais que devem ir pro Slack
+  - continue: true
+    match:
+      severity: critical
+    receiver: slack-critical
+  - continue: true
+    match:
+      severity: warning
+    receiver: slack-notifications
+
+templates:
+- /etc/alertmanager/config/*.tmpl
