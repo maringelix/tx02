@@ -10,20 +10,24 @@ on:
         options:
           - prd
           - stg
+      destroy_bootstrap:
+        description: 'Also destroy Terraform backend (Storage Account)?'
+        required: true
+        type: boolean
+        default: false
       confirm:
         description: 'Type "destroy" to confirm'
         required: true
 
 env:
   TF_VERSION: '1.6.0'
+  RESOURCE_GROUP: terraform-state-rg
+  STORAGE_ACCOUNT: tfstatetx02
 
 jobs:
-  destroy:
-    name: Destroy Infrastructure
+  validate:
+    name: 🔍 Validate Destroy Request
     runs-on: ubuntu-latest
-    
-    environment:
-      name: ${{ github.event.inputs.environment }}
     
     steps:
       - name: Validate confirmation
@@ -32,6 +36,38 @@ jobs:
           echo "❌ Confirmation failed. You must type 'destroy' to proceed."
           exit 1
       
+      - name: Show what will be destroyed
+        run: |
+          echo "## ⚠️ Destroy Plan" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Destroy Bootstrap:** ${{ github.event.inputs.destroy_bootstrap }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🗑️ Resources to be destroyed:" >> $GITHUB_STEP_SUMMARY
+          echo "- AKS Cluster (tx02-${{ github.event.inputs.environment }}-aks)" >> $GITHUB_STEP_SUMMARY
+          echo "- Azure Container Registry (tx02${{ github.event.inputs.environment }}acr)" >> $GITHUB_STEP_SUMMARY
+          echo "- Virtual Network" >> $GITHUB_STEP_SUMMARY
+          echo "- Network Security Groups" >> $GITHUB_STEP_SUMMARY
+          echo "- Resource Group (tx02-${{ github.event.inputs.environment }}-rg)" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ github.event.inputs.destroy_bootstrap }}" == "true" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 🔥 ALSO DESTROYING TERRAFORM BACKEND:" >> $GITHUB_STEP_SUMMARY
+            echo "- Storage Account (tfstatetx02)" >> $GITHUB_STEP_SUMMARY
+            echo "- Resource Group (terraform-state-rg)" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ **WARNING: You will need to run bootstrap workflow again!**" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  destroy-infrastructure:
+    name: 💥 Destroy Infrastructure
+    runs-on: ubuntu-latest
+    needs: validate
+    
+    environment:
+      name: ${{ github.event.inputs.environment }}
+    
+    steps:
       - name: Checkout code
         uses: actions/checkout@v4
       
@@ -39,35 +75,155 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
       
-      - name: Azure Login
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Extract Azure Credentials
+        id: azure-creds
+        run: |
+          echo "CLIENT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientId')" >> $GITHUB_OUTPUT
+          echo "CLIENT_SECRET=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientSecret')" >> $GITHUB_OUTPUT
+          echo "TENANT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.tenantId')" >> $GITHUB_OUTPUT
+          echo "SUBSCRIPTION_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.subscriptionId')" >> $GITHUB_OUTPUT
+      
+      - name: Azure CLI Login
+        run: |
+          az login --service-principal \
+            -u "${{ steps.azure-creds.outputs.CLIENT_ID }}" \
+            -p "${{ steps.azure-creds.outputs.CLIENT_SECRET }}" \
+            --tenant "${{ steps.azure-creds.outputs.TENANT_ID }}"
+          
+          az account set --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}"
+          
+          echo "✅ Logged in to Azure"
+          az account show
+      
+      - name: Check Current Resources
+        run: |
+          echo "🔍 Checking current resources..."
+          
+          # Check AKS
+          if az aks show --resource-group tx02-${{ github.event.inputs.environment }}-rg --name tx02-${{ github.event.inputs.environment }}-aks &>/dev/null; then
+            echo "✅ Found AKS cluster"
+          else
+            echo "⚠️ AKS cluster not found"
+          fi
+          
+          # Check ACR
+          if az acr show --resource-group tx02-${{ github.event.inputs.environment }}-rg --name tx02${{ github.event.inputs.environment }}acr &>/dev/null; then
+            echo "✅ Found ACR"
+          else
+            echo "⚠️ ACR not found"
+          fi
+          
+          # Check Resource Group
+          if az group show --name tx02-${{ github.event.inputs.environment }}-rg &>/dev/null; then
+            echo "✅ Found Resource Group"
+          else
+            echo "⚠️ Resource Group not found"
+          fi
       
       - name: Terraform Init
         run: terraform init
         working-directory: terraform/${{ github.event.inputs.environment }}
         env:
-          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_CLIENT_ID: ${{ steps.azure-creds.outputs.CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ steps.azure-creds.outputs.CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ steps.azure-creds.outputs.TENANT_ID }}
+          ARM_ACCESS_KEY: ${{ secrets.AZURE_STORAGE_ACCESS_KEY }}
       
       - name: Terraform Destroy
         run: terraform destroy -auto-approve
         working-directory: terraform/${{ github.event.inputs.environment }}
         env:
-          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_CLIENT_ID: ${{ steps.azure-creds.outputs.CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ steps.azure-creds.outputs.CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ steps.azure-creds.outputs.TENANT_ID }}
+          ARM_ACCESS_KEY: ${{ secrets.AZURE_STORAGE_ACCESS_KEY }}
           TF_VAR_db_password: ${{ secrets.TF_VAR_db_password }}
           TF_VAR_vm_admin_password: ${{ secrets.TF_VAR_admin_password }}
       
+      - name: Verify Destruction
+        run: |
+          echo "🔍 Verifying resource destruction..."
+          
+          if az group show --name tx02-${{ github.event.inputs.environment }}-rg &>/dev/null; then
+            echo "⚠️ Resource Group still exists"
+          else
+            echo "✅ Resource Group successfully destroyed"
+          fi
+      
       - name: Summary
         run: |
-          echo "## 🗑️ Infrastructure Destroyed" >> $GITHUB_STEP_SUMMARY
+          echo "## ✅ Infrastructure Destroyed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
           echo "**Destroyed at:** $(date)" >> $GITHUB_STEP_SUMMARY
+
+  destroy-bootstrap:
+    name: 🔥 Destroy Terraform Backend
+    runs-on: ubuntu-latest
+    needs: destroy-infrastructure
+    if: github.event.inputs.destroy_bootstrap == 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Extract Azure Credentials
+        id: azure-creds
+        run: |
+          echo "CLIENT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientId')" >> $GITHUB_OUTPUT
+          echo "CLIENT_SECRET=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientSecret')" >> $GITHUB_OUTPUT
+          echo "TENANT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.tenantId')" >> $GITHUB_OUTPUT
+          echo "SUBSCRIPTION_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.subscriptionId')" >> $GITHUB_OUTPUT
+      
+      - name: Azure CLI Login
+        run: |
+          az login --service-principal \
+            -u "${{ steps.azure-creds.outputs.CLIENT_ID }}" \
+            -p "${{ steps.azure-creds.outputs.CLIENT_SECRET }}" \
+            --tenant "${{ steps.azure-creds.outputs.TENANT_ID }}"
+          
+          az account set --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}"
+      
+      - name: Delete Storage Account
+        run: |
+          echo "🗑️ Deleting Storage Account..."
+          
+          if az storage account show --name ${{ env.STORAGE_ACCOUNT }} --resource-group ${{ env.RESOURCE_GROUP }} &>/dev/null; then
+            az storage account delete \
+              --name ${{ env.STORAGE_ACCOUNT }} \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --yes
+            echo "✅ Storage Account deleted"
+          else
+            echo "⚠️ Storage Account not found"
+          fi
+      
+      - name: Delete Resource Group
+        run: |
+          echo "🗑️ Deleting Resource Group..."
+          
+          if az group show --name ${{ env.RESOURCE_GROUP }} &>/dev/null; then
+            az group delete \
+              --name ${{ env.RESOURCE_GROUP }} \
+              --yes \
+              --no-wait
+            echo "✅ Resource Group deletion initiated"
+          else
+            echo "⚠️ Resource Group not found"
+          fi
+      
+      - name: Bootstrap Destroy Summary
+        run: |
+          echo "## 🔥 Terraform Backend Destroyed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Storage Account:** ${{ env.STORAGE_ACCOUNT }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Resource Group:** ${{ env.RESOURCE_GROUP }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ **Next steps:**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Run bootstrap workflow to recreate backend" >> $GITHUB_STEP_SUMMARY
+          echo "2. Then run terraform-apply to recreate infrastructure" >> $GITHUB_STEP_SUMMARY
+
