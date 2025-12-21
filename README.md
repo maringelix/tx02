@@ -60,6 +60,18 @@
 
 ---
 
+## 📐 **Arquitetura da Infraestrutura**
+
+<div align="center">
+
+![Diagrama da Infraestrutura Azure](docs/images/AzureExportedTemplate.png)
+
+*Arquitetura completa da infraestrutura Azure provisionada via Terraform*
+
+</div>
+
+---
+
 ## 🏆 **PROJETO COMPLETO E FUNCIONAL**
 
 Este projeto demonstra uma arquitetura cloud moderna na Azure com:
