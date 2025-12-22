@@ -69,6 +69,53 @@ jobs:
           echo "✅ Logged into Azure"
           az account show --output table
       
+      - name: Register required Azure providers
+        run: |
+          echo "Registering Azure resource providers..."
+          
+          # Register Microsoft.Insights for diagnostic settings and monitoring
+          echo "Checking Microsoft.Insights provider..."
+          INSIGHTS_STATE=$(az provider show --namespace Microsoft.Insights --query "registrationState" -o tsv 2>/dev/null || echo "NotRegistered")
+          
+          if [ "$INSIGHTS_STATE" != "Registered" ]; then
+            echo "⏳ Registering Microsoft.Insights..."
+            az provider register --namespace Microsoft.Insights
+            
+            # Wait for registration (max 2 minutes)
+            for i in {1..12}; do
+              STATE=$(az provider show --namespace Microsoft.Insights --query "registrationState" -o tsv)
+              if [ "$STATE" = "Registered" ]; then
+                echo "✅ Microsoft.Insights registered"
+                break
+              fi
+              echo "Waiting for registration... ($i/12)"
+              sleep 10
+            done
+          else
+            echo "✅ Microsoft.Insights already registered"
+          fi
+          
+          # Register Microsoft.OperationalInsights for Log Analytics
+          echo "Checking Microsoft.OperationalInsights provider..."
+          OPS_STATE=$(az provider show --namespace Microsoft.OperationalInsights --query "registrationState" -o tsv 2>/dev/null || echo "NotRegistered")
+          
+          if [ "$OPS_STATE" != "Registered" ]; then
+            echo "⏳ Registering Microsoft.OperationalInsights..."
+            az provider register --namespace Microsoft.OperationalInsights
+            
+            for i in {1..12}; do
+              STATE=$(az provider show --namespace Microsoft.OperationalInsights --query "registrationState" -o tsv)
+              if [ "$STATE" = "Registered" ]; then
+                echo "✅ Microsoft.OperationalInsights registered"
+                break
+              fi
+              echo "Waiting for registration... ($i/12)"
+              sleep 10
+            done
+          else
+            echo "✅ Microsoft.OperationalInsights already registered"
+          fi
+      
       - name: Check if Log Analytics Workspace exists
         id: check-workspace
         run: |
