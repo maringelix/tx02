@@ -226,16 +226,33 @@ jobs:
             echo "Found PVC: $pvc_name (Volume: $volume)"
           done || echo "No PVCs found in monitoring namespace"
           
-          # Get PVs and their Azure Disk IDs
+          # Get PVs and their Azure Disk IDs (CSI driver format)
           echo ""
           echo "Persistent Volumes details:"
           PV_COUNT=0
           for pv in $(kubectl get pv -o name 2>/dev/null); do
             PV_NAME=$(echo $pv | cut -d'/' -f2)
+            
+            # Check CSI driver (new format)
+            CSI_DRIVER=$(kubectl get $pv -o jsonpath='{.spec.csi.driver}' 2>/dev/null || echo "")
+            CSI_VOLUME_HANDLE=$(kubectl get $pv -o jsonpath='{.spec.csi.volumeHandle}' 2>/dev/null || echo "")
+            
+            # Check legacy azureDisk (old format)
             DISK_URI=$(kubectl get $pv -o jsonpath='{.spec.azureDisk.diskURI}' 2>/dev/null || echo "")
             
-            if [ -n "$DISK_URI" ]; then
+            # Process CSI driver disks
+            if [ "$CSI_DRIVER" = "disk.csi.azure.com" ] && [ -n "$CSI_VOLUME_HANDLE" ]; then
               echo "  PV: $PV_NAME"
+              echo "  Driver: Azure Disk CSI"
+              echo "  Volume Handle: $CSI_VOLUME_HANDLE"
+              DISK_NAME=$(echo $CSI_VOLUME_HANDLE | grep -oP 'disks/\K[^/]+$')
+              echo "  Disk Name: $DISK_NAME"
+              echo ""
+              PV_COUNT=$((PV_COUNT + 1))
+            # Process legacy azureDisk
+            elif [ -n "$DISK_URI" ]; then
+              echo "  PV: $PV_NAME"
+              echo "  Driver: Azure Disk (legacy)"
               echo "  Disk URI: $DISK_URI"
               DISK_NAME=$(echo $DISK_URI | grep -oP 'disks/\K[^/]+')
               echo "  Disk Name: $DISK_NAME"
@@ -361,14 +378,29 @@ jobs:
           WORKSPACE_ID=$(az aks show \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --name ${{ env.AKS_CLUSTER_NAME }} \
-            --query addonProfiles.omsAgent.config.logAnalyticsWorkspaceResourceID \
-            --output tsv)
+            --query addonProfiles.omsagent.config.logAnalyticsWorkspaceResourceID \
+            --output tsv 2>/dev/null || echo "")
           
-          if [ -n "$WORKSPACE_ID" ]; then
+          if [ -n "$WORKSPACE_ID" ] && [ "$WORKSPACE_ID" != "null" ]; then
             echo "✅ Log Analytics workspace: $WORKSPACE_ID"
             echo "   Backup metrics will be available in Azure Monitor"
           else
-            echo "⚠️ Log Analytics workspace not configured"
+            echo "⚠️ Log Analytics workspace not found via omsagent addon"
+            echo "   Checking for workspace created by Terraform..."
+            
+            # Try to find workspace by naming convention
+            WORKSPACE_NAME=$(az monitor log-analytics workspace list \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --query "[?contains(name, 'tx02')].name" \
+              --output tsv 2>/dev/null || echo "")
+            
+            if [ -n "$WORKSPACE_NAME" ]; then
+              echo "✅ Found workspace: $WORKSPACE_NAME"
+              echo "   Monitoring available for manual query"
+            else
+              echo "ℹ️ No Log Analytics workspace detected"
+              echo "   Backup metrics available via Azure SQL Database metrics"
+            fi
           fi
       
       - name: Display backup configuration summary
