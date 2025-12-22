@@ -180,7 +180,13 @@ jobs:
             echo "Run 'Configure Backup Automation' workflow first to create snapshots"
           else
             echo "Available snapshots:"
-            echo "$SNAPSHOTS" | jq -r '.[] | "\nSnapshot: \(.name)\n  Source Disk: \(.tags.SourceDisk // \"unknown\")\n  Created: \(.tags.CreatedAt // \"unknown\")\n  Size: \(.diskSizeGb) GB\n  Location: \(.location)"'
+            echo "$SNAPSHOTS" | jq -r '.[] | "
+Snapshot: " + .name + "
+  Source Disk: " + (.tags.SourceDisk // "unknown") + "
+  Created: " + (.tags.CreatedAt // "unknown") + "
+  Size: " + (.diskSizeGb|tostring) + " GB
+  Location: " + .location + "
+"'
             echo ""
             echo "To restore from snapshot, use:"
             echo "  Resource Type: disk"
