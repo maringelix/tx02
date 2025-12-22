@@ -297,13 +297,16 @@ jobs:
               # Get resource group from disk ID
               DISK_RG=$(echo $DISK_ID | cut -d'/' -f5)
               
+              # Force retention days as string
+              RETENTION_STR="${{ github.event.inputs.backup_retention_days }}days"
+              
               az disk update \
                 --name $DISK_NAME \
                 --resource-group $DISK_RG \
                 --set tags.Project=tx02 \
                 --set tags.Environment=${{ github.event.inputs.environment }} \
                 --set tags.BackupEnabled=yes \
-                --set tags.BackupRetention="${{ github.event.inputs.backup_retention_days }}"
+                --set tags.BackupRetention="$RETENTION_STR"
               
               echo "✅ Tagged: $DISK_NAME"
             done
