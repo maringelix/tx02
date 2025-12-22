@@ -404,6 +404,7 @@ kubectl get pod POD_NAME -n dx02 -o jsonpath='{.spec.containers[0].image}'
 - [SECURITY.md](SECURITY.md) - Políticas de segurança
 - [BACKUP_STRATEGY.md](BACKUP_STRATEGY.md) - Estratégia de backup e disaster recovery
 - [LOGGING_STRATEGY.md](LOGGING_STRATEGY.md) - Logs centralizados com Azure Log Analytics
+- [APM_STRATEGY.md](APM_STRATEGY.md) - Application Performance Monitoring com Azure Application Insights
 
 ---
 

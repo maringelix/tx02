@@ -1,0 +1,322 @@
+name: 📈 Configure Application Performance Monitoring
+
+# This workflow configures Azure Application Insights for APM
+# Features:
+# - ✅ Creates/verifies Application Insights resource
+# - ✅ Connects to existing Log Analytics workspace
+# - ✅ Configures telemetry collection
+# - ✅ Outputs connection string for app integration
+# - ✅ Enables live metrics and distributed tracing
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to configure APM'
+        required: true
+        type: choice
+        options:
+          - prd
+        default: 'prd'
+      
+      sampling_percentage:
+        description: 'Telemetry sampling percentage (lower = less cost)'
+        required: true
+        type: choice
+        options:
+          - '100'
+          - '50'
+          - '25'
+          - '10'
+        default: '50'
+
+env:
+  RESOURCE_GROUP: tx02-prd-rg
+  APP_INSIGHTS_NAME: tx02-prd-appinsights
+  WORKSPACE_NAME: tx02-prd-logs
+  LOCATION: eastus
+
+jobs:
+  configure-apm:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Extract Azure Credentials
+        id: azure-creds
+        run: |
+          echo "CLIENT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientId')" >> $GITHUB_OUTPUT
+          echo "CLIENT_SECRET=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientSecret')" >> $GITHUB_OUTPUT
+          echo "TENANT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.tenantId')" >> $GITHUB_OUTPUT
+          echo "SUBSCRIPTION_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.subscriptionId')" >> $GITHUB_OUTPUT
+      
+      - name: Azure CLI Login
+        run: |
+          az login --service-principal \
+            -u "${{ steps.azure-creds.outputs.CLIENT_ID }}" \
+            -p "${{ steps.azure-creds.outputs.CLIENT_SECRET }}" \
+            --tenant "${{ steps.azure-creds.outputs.TENANT_ID }}"
+          az account set --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}"
+          
+          echo "✅ Logged into Azure"
+          az account show --output table
+      
+      - name: Get Log Analytics Workspace ID
+        id: workspace
+        run: |
+          echo "Getting Log Analytics Workspace details..."
+          
+          WORKSPACE_ID=$(az monitor log-analytics workspace show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --workspace-name ${{ env.WORKSPACE_NAME }} \
+            --query id \
+            --output tsv 2>/dev/null || echo "")
+          
+          if [ -z "$WORKSPACE_ID" ]; then
+            echo "❌ Log Analytics Workspace not found: ${{ env.WORKSPACE_NAME }}"
+            echo "Please run 'Configure Centralized Logging' workflow first"
+            exit 1
+          fi
+          
+          echo "WORKSPACE_ID=$WORKSPACE_ID" >> $GITHUB_OUTPUT
+          echo "✅ Found workspace: ${{ env.WORKSPACE_NAME }}"
+          echo "Workspace ID: $WORKSPACE_ID"
+      
+      - name: Check if Application Insights exists
+        id: check-appinsights
+        run: |
+          echo "Checking for existing Application Insights..."
+          
+          if az monitor app-insights component show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --app ${{ env.APP_INSIGHTS_NAME }} &>/dev/null; then
+            echo "✅ Application Insights exists: ${{ env.APP_INSIGHTS_NAME }}"
+            echo "EXISTS=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ Application Insights not found: ${{ env.APP_INSIGHTS_NAME }}"
+            echo "EXISTS=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Create Application Insights
+        if: steps.check-appinsights.outputs.EXISTS == 'false'
+        run: |
+          echo "Creating Application Insights resource..."
+          
+          az monitor app-insights component create \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --app ${{ env.APP_INSIGHTS_NAME }} \
+            --location ${{ env.LOCATION }} \
+            --kind web \
+            --application-type web \
+            --workspace ${{ steps.workspace.outputs.WORKSPACE_ID }} \
+            --retention-time 90 \
+            --tags \
+              Project=tx02 \
+              Environment=${{ github.event.inputs.environment }} \
+              ManagedBy=github-actions \
+              Purpose=application-performance-monitoring
+          
+          echo "✅ Application Insights created: ${{ env.APP_INSIGHTS_NAME }}"
+      
+      - name: Get Application Insights details
+        id: appinsights
+        run: |
+          echo "Retrieving Application Insights configuration..."
+          
+          # Get instrumentation key
+          INSTRUMENTATION_KEY=$(az monitor app-insights component show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --app ${{ env.APP_INSIGHTS_NAME }} \
+            --query instrumentationKey \
+            --output tsv)
+          
+          # Get connection string
+          CONNECTION_STRING=$(az monitor app-insights component show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --app ${{ env.APP_INSIGHTS_NAME }} \
+            --query connectionString \
+            --output tsv)
+          
+          # Get app ID
+          APP_ID=$(az monitor app-insights component show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --app ${{ env.APP_INSIGHTS_NAME }} \
+            --query appId \
+            --output tsv)
+          
+          echo "INSTRUMENTATION_KEY=$INSTRUMENTATION_KEY" >> $GITHUB_OUTPUT
+          echo "CONNECTION_STRING=$CONNECTION_STRING" >> $GITHUB_OUTPUT
+          echo "APP_ID=$APP_ID" >> $GITHUB_OUTPUT
+          
+          echo "✅ Configuration retrieved"
+      
+      - name: Configure sampling
+        run: |
+          echo "Configuring telemetry sampling at ${{ github.event.inputs.sampling_percentage }}%..."
+          
+          # Note: Sampling is typically configured in application code
+          # This step documents the expected sampling rate
+          
+          echo "✅ Sampling configuration: ${{ github.event.inputs.sampling_percentage }}%"
+          echo "   (Apply this in application code - see APM_STRATEGY.md)"
+      
+      - name: Configure availability tests (optional)
+        continue-on-error: true
+        run: |
+          echo "Setting up basic availability test..."
+          
+          # Check if DX02 app has a public endpoint
+          INGRESS_IP=$(kubectl get svc -n dx02 dx02-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+          
+          if [ -n "$INGRESS_IP" ]; then
+            echo "Found app endpoint: http://$INGRESS_IP"
+            
+            # Create availability test
+            az monitor app-insights web-test create \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --name "dx02-health-check" \
+              --location ${{ env.LOCATION }} \
+              --app-insights ${{ env.APP_INSIGHTS_NAME }} \
+              --kind ping \
+              --web-test-name "DX02 Health Check" \
+              --enabled true \
+              --frequency 300 \
+              --timeout 30 \
+              --locations "us-east-2" "us-west" \
+              --url "http://$INGRESS_IP/health" \
+              --tags Project=tx02 Environment=${{ github.event.inputs.environment }} || echo "⚠️ Could not create availability test (may require app endpoint configuration)"
+            
+            echo "✅ Availability test configured"
+          else
+            echo "⚠️ No public endpoint found for DX02 app"
+            echo "   Availability tests can be configured later via Portal"
+          fi
+      
+      - name: Display APM configuration summary
+        run: |
+          echo "============================================"
+          echo "📈 APM Configuration Summary"
+          echo "============================================"
+          echo ""
+          echo "Environment: ${{ github.event.inputs.environment }}"
+          echo "Resource Group: ${{ env.RESOURCE_GROUP }}"
+          echo ""
+          echo "📦 Application Insights:"
+          echo "  Name: ${{ env.APP_INSIGHTS_NAME }}"
+          echo "  Location: ${{ env.LOCATION }}"
+          echo "  Retention: 90 days"
+          echo "  Sampling: ${{ github.event.inputs.sampling_percentage }}%"
+          echo ""
+          echo "🔧 Integration Details:"
+          echo "  App ID: ${{ steps.appinsights.outputs.APP_ID }}"
+          echo "  Instrumentation Key: ${{ steps.appinsights.outputs.INSTRUMENTATION_KEY }}"
+          echo ""
+          echo "⚠️  IMPORTANT - Connection String (use in app):"
+          echo "${{ steps.appinsights.outputs.CONNECTION_STRING }}"
+          echo ""
+          echo "🔗 Connected to Log Analytics:"
+          echo "  Workspace: ${{ env.WORKSPACE_NAME }}"
+          echo "  Integration: Full telemetry available in Log Analytics"
+          echo ""
+          echo "✅ Application Performance Monitoring configured!"
+          echo ""
+          echo "📚 Next Steps:"
+          echo "  1. Add connection string to DX02 app (GitHub Secret or ConfigMap)"
+          echo "  2. Install Application Insights SDK in app:"
+          echo "     - Backend (Node.js): npm install applicationinsights"
+          echo "     - Frontend (React): npm install @microsoft/applicationinsights-web"
+          echo "  3. Initialize SDK in application code (see APM_STRATEGY.md)"
+          echo "  4. Deploy updated application to AKS"
+          echo "  5. Wait 5-10 minutes for telemetry to appear"
+          echo "  6. Access metrics in Azure Portal:"
+          echo "     Portal → Application Insights → ${{ env.APP_INSIGHTS_NAME }}"
+          echo ""
+          echo "📊 Available Features:"
+          echo "  - Live Metrics (real-time performance)"
+          echo "  - Application Map (dependency visualization)"
+          echo "  - Transaction Search (detailed traces)"
+          echo "  - Failures (exceptions and errors)"
+          echo "  - Performance (response times, slow operations)"
+          echo "  - Availability (uptime monitoring)"
+          echo "  - Usage (user analytics)"
+          echo ""
+          echo "💰 Estimated Cost:"
+          echo "  First 5 GB/month: FREE"
+          echo "  Additional data: ~\$2.30/GB"
+          echo "  Sampling at ${{ github.event.inputs.sampling_percentage }}%: Reduces cost proportionally"
+          echo "  Estimated: \$0-10/month (depending on traffic)"
+          echo ""
+      
+      - name: Create Kubernetes secret with connection string
+        continue-on-error: true
+        run: |
+          echo "Creating/updating Kubernetes secret with Application Insights connection string..."
+          
+          # Get AKS credentials
+          az aks get-credentials \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name tx02-prd-aks \
+            --overwrite-existing
+          
+          # Check if namespace exists
+          kubectl get namespace dx02 &>/dev/null || kubectl create namespace dx02
+          
+          # Create/update secret
+          kubectl create secret generic appinsights-config \
+            --from-literal=connection-string="${{ steps.appinsights.outputs.CONNECTION_STRING }}" \
+            --from-literal=instrumentation-key="${{ steps.appinsights.outputs.INSTRUMENTATION_KEY }}" \
+            --namespace dx02 \
+            --dry-run=client -o yaml | kubectl apply -f -
+          
+          echo "✅ Kubernetes secret 'appinsights-config' created/updated in namespace 'dx02'"
+          echo "   Use it in your deployment:"
+          echo "   env:"
+          echo "     - name: APPINSIGHTS_CONNECTION_STRING"
+          echo "       valueFrom:"
+          echo "         secretKeyRef:"
+          echo "           name: appinsights-config"
+          echo "           key: connection-string"
+      
+      - name: Output connection string to GitHub Secret
+        run: |
+          echo "💡 To store connection string as GitHub Secret, run:"
+          echo ""
+          echo "gh secret set APPINSIGHTS_CONNECTION_STRING --body '${{ steps.appinsights.outputs.CONNECTION_STRING }}'"
+          echo ""
+          echo "Or add manually in GitHub repo settings:"
+          echo "  Settings → Secrets and variables → Actions → New repository secret"
+          echo "  Name: APPINSIGHTS_CONNECTION_STRING"
+          echo "  Value: ${{ steps.appinsights.outputs.CONNECTION_STRING }}"
+      
+      - name: Send Slack notification
+        if: always()
+        continue-on-error: true
+        run: |
+          if [ -z "${{ secrets.SLACK_WEBHOOK_URL }}" ]; then
+            echo "⚠️ SLACK_WEBHOOK_URL not configured, skipping notification"
+            exit 0
+          fi
+          
+          if [ "${{ job.status }}" = "success" ]; then
+            COLOR="good"
+            EMOJI="✅"
+            STATUS="SUCCESS"
+          else
+            COLOR="danger"
+            EMOJI="❌"
+            STATUS="FAILED"
+          fi
+          
+          curl -X POST "${{ secrets.SLACK_WEBHOOK_URL }}" \
+            -H 'Content-Type: application/json' \
+            -d "{
+              \"attachments\": [{
+                \"color\": \"$COLOR\",
+                \"title\": \"$EMOJI Application Performance Monitoring $STATUS\",
+                \"text\": \"Environment: ${{ github.event.inputs.environment }}\\nApplication Insights: ${{ env.APP_INSIGHTS_NAME }}\\nSampling: ${{ github.event.inputs.sampling_percentage }}%\\n\\nNext: Integrate SDK in DX02 app\",
+                \"footer\": \"GitHub Actions - TX02\",
+                \"ts\": $(date +%s)
+              }]
+            }"

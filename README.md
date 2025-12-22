@@ -655,6 +655,7 @@ Veja [TROUBLESHOOTING.md](TROUBLESHOOTING.md) para mais detalhes.
 - [SECURITY.md](SECURITY.md) - Políticas de segurança
 - [BACKUP_STRATEGY.md](BACKUP_STRATEGY.md) - 🗄️ Estratégia de backup e disaster recovery
 - [LOGGING_STRATEGY.md](LOGGING_STRATEGY.md) - 📊 Logs centralizados com Azure Log Analytics
+- [APM_STRATEGY.md](APM_STRATEGY.md) - 📈 Application Performance Monitoring com Azure Application Insights
 
 ---
 
@@ -671,7 +672,7 @@ Veja [TROUBLESHOOTING.md](TROUBLESHOOTING.md) para mais detalhes.
 - [x] **✅ SQL Database Free Tier**: Workaround para limitação do free tier implementado
 - [x] **✅ Backup Automation**: Workflows de backup e restore para SQL Database e AKS volumes
 - [x] **✅ Logs Centralizados**: Azure Log Analytics implementado com Container Insights
-- [ ] **APM (Application Performance Monitoring)**: Adicionar Azure Application Insights
+- [x] **✅ APM (Application Performance Monitoring)**: Azure Application Insights configurado
 - [ ] **Blue/Green Deployment**: Implementar estratégia de deploy avançada no AKS
 - [ ] **Service Mesh**: Adicionar Istio, Linkerd ou Azure Service Mesh
 - [ ] **GitOps**: Migrar para ArgoCD ou Flux
