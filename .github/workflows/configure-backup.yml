@@ -303,7 +303,7 @@ jobs:
                 --set tags.Project=tx02 \
                 --set tags.Environment=${{ github.event.inputs.environment }} \
                 --set tags.BackupEnabled=yes \
-                --set tags.BackupRetention=${{ github.event.inputs.backup_retention_days }}
+                --set tags.BackupRetention="${{ github.event.inputs.backup_retention_days }}"
               
               echo "✅ Tagged: $DISK_NAME"
             done
