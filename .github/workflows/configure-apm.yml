@@ -111,7 +111,6 @@ jobs:
             --kind web \
             --application-type web \
             --workspace ${{ steps.workspace.outputs.WORKSPACE_ID }} \
-            --retention-time 90 \
             --tags \
               Project=tx02 \
               Environment=${{ github.event.inputs.environment }} \
@@ -119,6 +118,7 @@ jobs:
               Purpose=application-performance-monitoring
           
           echo "✅ Application Insights created: ${{ env.APP_INSIGHTS_NAME }}"
+          echo "📝 Note: Retention managed by Log Analytics workspace (${{ env.WORKSPACE_NAME }})"
       
       - name: Get Application Insights details
         id: appinsights
