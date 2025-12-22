@@ -129,7 +129,7 @@ jobs:
       - name: Enable Container Insights on AKS
         if: ${{ github.event.inputs.enable_container_insights == 'true' }}
         run: |
-          echo "Enabling Container Insights on AKS cluster..."
+          echo "Checking Container Insights status on AKS cluster..."
           
           # Check if already enabled
           ADDON_STATUS=$(az aks show \
@@ -141,15 +141,37 @@ jobs:
           if [ "$ADDON_STATUS" = "true" ]; then
             echo "✅ Container Insights already enabled"
             
-            # Update workspace if different
-            echo "Updating workspace configuration..."
-            az aks enable-addons \
+            # Check current workspace
+            CURRENT_WORKSPACE=$(az aks show \
               --resource-group ${{ env.RESOURCE_GROUP }} \
               --name ${{ env.AKS_CLUSTER_NAME }} \
-              --addons monitoring \
-              --workspace-resource-id ${{ steps.workspace.outputs.WORKSPACE_ID }}
+              --query "addonProfiles.omsagent.config.logAnalyticsWorkspaceResourceID" \
+              --output tsv 2>/dev/null || echo "")
             
-            echo "✅ Workspace configuration updated"
+            echo "Current workspace: $CURRENT_WORKSPACE"
+            echo "Target workspace: ${{ steps.workspace.outputs.WORKSPACE_ID }}"
+            
+            if [ "$CURRENT_WORKSPACE" != "${{ steps.workspace.outputs.WORKSPACE_ID }}" ]; then
+              echo "⚠️ Workspace differs, updating configuration..."
+              
+              # Disable then re-enable with new workspace
+              echo "Disabling monitoring addon..."
+              az aks disable-addons \
+                --resource-group ${{ env.RESOURCE_GROUP }} \
+                --name ${{ env.AKS_CLUSTER_NAME }} \
+                --addons monitoring
+              
+              echo "Enabling monitoring addon with new workspace..."
+              az aks enable-addons \
+                --resource-group ${{ env.RESOURCE_GROUP }} \
+                --name ${{ env.AKS_CLUSTER_NAME }} \
+                --addons monitoring \
+                --workspace-resource-id ${{ steps.workspace.outputs.WORKSPACE_ID }}
+              
+              echo "✅ Workspace configuration updated"
+            else
+              echo "✅ Already configured with correct workspace"
+            fi
           else
             echo "Enabling Container Insights addon..."
             az aks enable-addons \
