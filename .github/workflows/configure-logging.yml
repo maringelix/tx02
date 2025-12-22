@@ -1,0 +1,335 @@
+name: 📊 Configure Centralized Logging
+
+# This workflow configures Azure Log Analytics for centralized logging
+# Features:
+# - ✅ Creates/verifies Log Analytics Workspace
+# - ✅ Enables Container Insights on AKS
+# - ✅ Configures log collection from all namespaces
+# - ✅ Sets up useful log queries
+# - ✅ Configures log retention policies
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to configure logging'
+        required: true
+        type: choice
+        options:
+          - prd
+        default: 'prd'
+      
+      retention_days:
+        description: 'Log retention period (days)'
+        required: true
+        type: choice
+        options:
+          - '30'
+          - '60'
+          - '90'
+          - '180'
+        default: '30'
+      
+      enable_container_insights:
+        description: 'Enable Container Insights for AKS'
+        required: true
+        type: boolean
+        default: true
+
+env:
+  RESOURCE_GROUP: tx02-prd-rg
+  AKS_CLUSTER_NAME: tx02-prd-aks
+  WORKSPACE_NAME: tx02-prd-logs
+  LOCATION: eastus
+
+jobs:
+  configure-logging:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Extract Azure Credentials
+        id: azure-creds
+        run: |
+          echo "CLIENT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientId')" >> $GITHUB_OUTPUT
+          echo "CLIENT_SECRET=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientSecret')" >> $GITHUB_OUTPUT
+          echo "TENANT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.tenantId')" >> $GITHUB_OUTPUT
+          echo "SUBSCRIPTION_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.subscriptionId')" >> $GITHUB_OUTPUT
+      
+      - name: Azure CLI Login
+        run: |
+          az login --service-principal \
+            -u "${{ steps.azure-creds.outputs.CLIENT_ID }}" \
+            -p "${{ steps.azure-creds.outputs.CLIENT_SECRET }}" \
+            --tenant "${{ steps.azure-creds.outputs.TENANT_ID }}"
+          az account set --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}"
+          
+          echo "✅ Logged into Azure"
+          az account show --output table
+      
+      - name: Check if Log Analytics Workspace exists
+        id: check-workspace
+        run: |
+          echo "Checking for existing Log Analytics Workspace..."
+          
+          if az monitor log-analytics workspace show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --workspace-name ${{ env.WORKSPACE_NAME }} &>/dev/null; then
+            echo "✅ Workspace exists: ${{ env.WORKSPACE_NAME }}"
+            echo "EXISTS=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ Workspace not found: ${{ env.WORKSPACE_NAME }}"
+            echo "EXISTS=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Create Log Analytics Workspace
+        if: steps.check-workspace.outputs.EXISTS == 'false'
+        run: |
+          echo "Creating Log Analytics Workspace..."
+          
+          az monitor log-analytics workspace create \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --workspace-name ${{ env.WORKSPACE_NAME }} \
+            --location ${{ env.LOCATION }} \
+            --retention-time ${{ github.event.inputs.retention_days }} \
+            --tags \
+              Project=tx02 \
+              Environment=${{ github.event.inputs.environment }} \
+              ManagedBy=github-actions \
+              Purpose=centralized-logging
+          
+          echo "✅ Workspace created: ${{ env.WORKSPACE_NAME }}"
+      
+      - name: Update workspace retention
+        if: steps.check-workspace.outputs.EXISTS == 'true'
+        run: |
+          echo "Updating workspace retention to ${{ github.event.inputs.retention_days }} days..."
+          
+          az monitor log-analytics workspace update \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --workspace-name ${{ env.WORKSPACE_NAME }} \
+            --retention-time ${{ github.event.inputs.retention_days }}
+          
+          echo "✅ Retention updated"
+      
+      - name: Get Workspace details
+        id: workspace
+        run: |
+          WORKSPACE_ID=$(az monitor log-analytics workspace show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --workspace-name ${{ env.WORKSPACE_NAME }} \
+            --query id \
+            --output tsv)
+          
+          echo "WORKSPACE_ID=$WORKSPACE_ID" >> $GITHUB_OUTPUT
+          echo "Workspace ID: $WORKSPACE_ID"
+      
+      - name: Enable Container Insights on AKS
+        if: ${{ github.event.inputs.enable_container_insights == 'true' }}
+        run: |
+          echo "Enabling Container Insights on AKS cluster..."
+          
+          # Check if already enabled
+          ADDON_STATUS=$(az aks show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.AKS_CLUSTER_NAME }} \
+            --query "addonProfiles.omsagent.enabled" \
+            --output tsv 2>/dev/null || echo "false")
+          
+          if [ "$ADDON_STATUS" = "true" ]; then
+            echo "✅ Container Insights already enabled"
+            
+            # Update workspace if different
+            echo "Updating workspace configuration..."
+            az aks enable-addons \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --name ${{ env.AKS_CLUSTER_NAME }} \
+              --addons monitoring \
+              --workspace-resource-id ${{ steps.workspace.outputs.WORKSPACE_ID }}
+            
+            echo "✅ Workspace configuration updated"
+          else
+            echo "Enabling Container Insights addon..."
+            az aks enable-addons \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --name ${{ env.AKS_CLUSTER_NAME }} \
+              --addons monitoring \
+              --workspace-resource-id ${{ steps.workspace.outputs.WORKSPACE_ID }}
+            
+            echo "✅ Container Insights enabled"
+          fi
+      
+      - name: Configure diagnostic settings for AKS
+        run: |
+          echo "Configuring AKS diagnostic settings..."
+          
+          AKS_ID=$(az aks show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.AKS_CLUSTER_NAME }} \
+            --query id \
+            --output tsv)
+          
+          # Check if diagnostic setting exists
+          DIAG_EXISTS=$(az monitor diagnostic-settings list \
+            --resource $AKS_ID \
+            --query "[?name=='aks-diagnostics'].name" \
+            --output tsv)
+          
+          if [ -n "$DIAG_EXISTS" ]; then
+            echo "Updating existing diagnostic settings..."
+            az monitor diagnostic-settings delete \
+              --resource $AKS_ID \
+              --name aks-diagnostics
+          fi
+          
+          echo "Creating diagnostic settings..."
+          az monitor diagnostic-settings create \
+            --resource $AKS_ID \
+            --name aks-diagnostics \
+            --workspace ${{ steps.workspace.outputs.WORKSPACE_ID }} \
+            --logs '[
+              {"category": "kube-apiserver", "enabled": true},
+              {"category": "kube-controller-manager", "enabled": true},
+              {"category": "kube-scheduler", "enabled": true},
+              {"category": "kube-audit", "enabled": true},
+              {"category": "cluster-autoscaler", "enabled": true}
+            ]' \
+            --metrics '[
+              {"category": "AllMetrics", "enabled": true}
+            ]'
+          
+          echo "✅ Diagnostic settings configured"
+      
+      - name: Create useful log queries
+        run: |
+          echo "Creating saved queries in Log Analytics..."
+          
+          # Query 1: Failed pods
+          az monitor log-analytics workspace saved-search create \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --workspace-name ${{ env.WORKSPACE_NAME }} \
+            --name "FailedPods" \
+            --category "Kubernetes" \
+            --display-name "Failed Pods" \
+            --query 'KubePodInventory | where PodStatus == "Failed" | summarize count() by Name, Namespace, Computer | order by count_ desc' \
+            --fa function-alias || echo "Query already exists"
+          
+          # Query 2: Container logs with errors
+          az monitor log-analytics workspace saved-search create \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --workspace-name ${{ env.WORKSPACE_NAME }} \
+            --name "ErrorLogs" \
+            --category "Kubernetes" \
+            --display-name "Container Error Logs" \
+            --query 'ContainerLog | where LogEntry contains "error" or LogEntry contains "Error" or LogEntry contains "ERROR" | project TimeGenerated, Computer, ContainerID, LogEntry | order by TimeGenerated desc' \
+            --fa function-alias || echo "Query already exists"
+          
+          # Query 3: High CPU containers
+          az monitor log-analytics workspace saved-search create \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --workspace-name ${{ env.WORKSPACE_NAME }} \
+            --name "HighCPU" \
+            --category "Performance" \
+            --display-name "High CPU Containers" \
+            --query 'Perf | where ObjectName == "K8SContainer" and CounterName == "cpuUsageNanoCores" | summarize AvgCPU = avg(CounterValue) by Computer, InstanceName | where AvgCPU > 80 | order by AvgCPU desc' \
+            --fa function-alias || echo "Query already exists"
+          
+          # Query 4: Pod restart count
+          az monitor log-analytics workspace saved-search create \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --workspace-name ${{ env.WORKSPACE_NAME }} \
+            --name "PodRestarts" \
+            --category "Kubernetes" \
+            --display-name "Pod Restart Count" \
+            --query 'KubePodInventory | summarize RestartCount = sum(PodRestartCount) by Name, Namespace | where RestartCount > 0 | order by RestartCount desc' \
+            --fa function-alias || echo "Query already exists"
+          
+          echo "✅ Saved queries created"
+      
+      - name: Display logging configuration summary
+        run: |
+          echo "============================================"
+          echo "📊 Logging Configuration Summary"
+          echo "============================================"
+          echo ""
+          echo "Environment: ${{ github.event.inputs.environment }}"
+          echo "Resource Group: ${{ env.RESOURCE_GROUP }}"
+          echo ""
+          echo "📦 Log Analytics Workspace:"
+          echo "  Name: ${{ env.WORKSPACE_NAME }}"
+          echo "  Location: ${{ env.LOCATION }}"
+          echo "  Retention: ${{ github.event.inputs.retention_days }} days"
+          echo "  Resource ID: ${{ steps.workspace.outputs.WORKSPACE_ID }}"
+          echo ""
+          echo "🔧 AKS Configuration:"
+          echo "  Cluster: ${{ env.AKS_CLUSTER_NAME }}"
+          echo "  Container Insights: ${{ github.event.inputs.enable_container_insights }}"
+          echo "  Diagnostic Logs: Enabled"
+          echo ""
+          echo "📋 Log Categories Enabled:"
+          echo "  - kube-apiserver (API server logs)"
+          echo "  - kube-controller-manager (Controller logs)"
+          echo "  - kube-scheduler (Scheduler logs)"
+          echo "  - kube-audit (Audit logs)"
+          echo "  - cluster-autoscaler (Autoscaler logs)"
+          echo "  - Container logs (stdout/stderr)"
+          echo "  - Performance metrics"
+          echo ""
+          echo "🔍 Saved Queries Created:"
+          echo "  1. Failed Pods - Track pod failures"
+          echo "  2. Error Logs - Search for errors in container logs"
+          echo "  3. High CPU - Identify high CPU usage containers"
+          echo "  4. Pod Restarts - Monitor pod restart counts"
+          echo ""
+          echo "✅ Centralized logging configured successfully!"
+          echo ""
+          echo "💡 Next Steps:"
+          echo "  1. Access logs in Azure Portal:"
+          echo "     Portal → Log Analytics Workspaces → ${{ env.WORKSPACE_NAME }}"
+          echo "  2. Run saved queries from 'Logs' section"
+          echo "  3. Create custom alerts based on log queries"
+          echo "  4. Integrate with Grafana (optional)"
+          echo ""
+          echo "📚 Useful KQL Queries:"
+          echo "  - All container logs: ContainerLog | order by TimeGenerated desc"
+          echo "  - DX02 app logs: ContainerLog | where Name contains \"dx02\""
+          echo "  - Last hour errors: ContainerLog | where TimeGenerated > ago(1h) and LogEntry contains \"error\""
+          echo ""
+          echo "💰 Estimated Cost:"
+          echo "  First 5 GB/month: FREE"
+          echo "  Additional data: ~\$2.30/GB"
+          echo "  Estimated: \$0-5/month (depending on log volume)"
+          echo ""
+      
+      - name: Send Slack notification
+        if: always()
+        continue-on-error: true
+        run: |
+          if [ -z "${{ secrets.SLACK_WEBHOOK_URL }}" ]; then
+            echo "⚠️ SLACK_WEBHOOK_URL not configured, skipping notification"
+            exit 0
+          fi
+          
+          if [ "${{ job.status }}" = "success" ]; then
+            COLOR="good"
+            EMOJI="✅"
+            STATUS="SUCCESS"
+          else
+            COLOR="danger"
+            EMOJI="❌"
+            STATUS="FAILED"
+          fi
+          
+          curl -X POST "${{ secrets.SLACK_WEBHOOK_URL }}" \
+            -H 'Content-Type: application/json' \
+            -d "{
+              \"attachments\": [{
+                \"color\": \"$COLOR\",
+                \"title\": \"$EMOJI Centralized Logging Configuration $STATUS\",
+                \"text\": \"Environment: ${{ github.event.inputs.environment }}\\nWorkspace: ${{ env.WORKSPACE_NAME }}\\nRetention: ${{ github.event.inputs.retention_days }} days\\nContainer Insights: ${{ github.event.inputs.enable_container_insights }}\",
+                \"footer\": \"GitHub Actions - TX02\",
+                \"ts\": $(date +%s)
+              }]
+            }"

@@ -397,6 +397,14 @@ kubectl get pod POD_NAME -n dx02 -o jsonpath='{.spec.containers[0].image}'
 - [Kubectl Cheat Sheet](https://kubernetes.io/docs/reference/kubectl/cheatsheet/)
 - [Terraform Azure Provider](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs)
 
+### 📚 Documentação do Projeto
+
+- [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) - Guia completo de deploy
+- [GITHUB_SECRETS.md](GITHUB_SECRETS.md) - Configuração de secrets
+- [SECURITY.md](SECURITY.md) - Políticas de segurança
+- [BACKUP_STRATEGY.md](BACKUP_STRATEGY.md) - Estratégia de backup e disaster recovery
+- [LOGGING_STRATEGY.md](LOGGING_STRATEGY.md) - Logs centralizados com Azure Log Analytics
+
 ---
 
 **Última atualização:** Dezembro 2025

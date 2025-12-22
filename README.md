@@ -654,6 +654,7 @@ Veja [TROUBLESHOOTING.md](TROUBLESHOOTING.md) para mais detalhes.
 - [QUICK_REFERENCE.md](QUICK_REFERENCE.md) - Referência rápida de comandos
 - [SECURITY.md](SECURITY.md) - Políticas de segurança
 - [BACKUP_STRATEGY.md](BACKUP_STRATEGY.md) - 🗄️ Estratégia de backup e disaster recovery
+- [LOGGING_STRATEGY.md](LOGGING_STRATEGY.md) - 📊 Logs centralizados com Azure Log Analytics
 
 ---
 
@@ -669,7 +670,7 @@ Veja [TROUBLESHOOTING.md](TROUBLESHOOTING.md) para mais detalhes.
 - [x] **✅ Container Registry**: ACR integrado com AKS (AcrPull role automático)
 - [x] **✅ SQL Database Free Tier**: Workaround para limitação do free tier implementado
 - [x] **✅ Backup Automation**: Workflows de backup e restore para SQL Database e AKS volumes
-- [ ] **Logs Centralizados**: Implementar Azure Log Analytics ou Stack ELK
+- [x] **✅ Logs Centralizados**: Azure Log Analytics implementado com Container Insights
 - [ ] **APM (Application Performance Monitoring)**: Adicionar Azure Application Insights
 - [ ] **Blue/Green Deployment**: Implementar estratégia de deploy avançada no AKS
 - [ ] **Service Mesh**: Adicionar Istio, Linkerd ou Azure Service Mesh
