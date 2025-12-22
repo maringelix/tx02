@@ -143,7 +143,8 @@ jobs:
             echo "First LTR backup may take up to 1 week to appear"
           else
             echo "Available LTR backups:"
-            echo "$LTR_BACKUPS" | jq -r '.[] | "\nBackup: \(.name)\n  Created: \(.backupTime)\n  Expiration: \(.backupExpirationTime)\n  Size: \(.databaseSizeInBytes / 1024 / 1024 / 1024 | floor) GB\n  ID: \(.id)"'
+            echo ""
+            echo "$LTR_BACKUPS" | jq -r '.[] | "Backup: " + .name + " | Created: " + .backupTime + " | Expiration: " + .backupExpirationTime + " | Size: " + (if .databaseSizeInBytes then ((.databaseSizeInBytes / 1024 / 1024 / 1024) | floor | tostring) + "GB" else "unknown" end)'
             echo ""
             echo "To restore from LTR backup, use:"
             echo "  Resource Type: sql-ltr"
