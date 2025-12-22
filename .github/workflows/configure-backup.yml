@@ -294,12 +294,17 @@ jobs:
               DISK_NAME=$(basename $DISK_ID)
               echo "Tagging disk: $DISK_NAME"
               
+              # Get resource group from disk ID
+              DISK_RG=$(echo $DISK_ID | cut -d'/' -f5)
+              
               az disk update \
-                --ids $DISK_ID \
-                --set tags.Project=tx02 \
-                --set tags.Environment=${{ github.event.inputs.environment }} \
-                --set tags.BackupEnabled=true \
-                --set tags.BackupRetention=${{ github.event.inputs.backup_retention_days }}
+                --name $DISK_NAME \
+                --resource-group $DISK_RG \
+                --tags \
+                  Project=tx02 \
+                  Environment=${{ github.event.inputs.environment }} \
+                  BackupEnabled="true" \
+                  BackupRetention=${{ github.event.inputs.backup_retention_days }}
               
               echo "✅ Tagged: $DISK_NAME"
             done
@@ -320,10 +325,10 @@ jobs:
           
           TIMESTAMP=$(date +%Y%m%d-%H%M%S)
           
-          # Get disks tagged for backup
+          # Get disks tagged for backup (BackupEnabled can be string or boolean)
           DISK_IDS=$(az disk list \
             --resource-group $AKS_NODE_RG \
-            --query "[?tags.BackupEnabled=='true'].id" \
+            --query "[?tags.BackupEnabled].id" \
             --output tsv)
           
           if [ -n "$DISK_IDS" ]; then
