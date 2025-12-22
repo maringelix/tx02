@@ -1,0 +1,583 @@
+name: ♻️ Restore from Backup
+
+# This workflow restores resources from Azure backups
+# Adapted from TX01 AWS Backup restore for Azure infrastructure
+#
+# Features:
+# - ✅ List available SQL Database backups (PITR and LTR)
+# - ✅ Restore SQL Database to point-in-time or from LTR backup
+# - ✅ List available disk snapshots
+# - ✅ Restore AKS persistent volumes from snapshots
+# - ✅ Support for restore to new resource (safer for testing)
+#
+# Recovery Capabilities:
+# - SQL Database: Point-in-time restore (last N days)
+# - SQL Database: Long-term restore (weekly/monthly backups)
+# - AKS Disks: Restore from manual snapshots
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to restore'
+        required: true
+        type: choice
+        options:
+          - prd
+        default: 'prd'
+      
+      resource_type:
+        description: 'Type of resource to restore'
+        required: true
+        type: choice
+        options:
+          - list-backups
+          - sql-pitr
+          - sql-ltr
+          - disk
+        default: 'list-backups'
+      
+      pitr_restore_time:
+        description: 'Point-in-time to restore (ISO 8601: 2025-01-15T10:30:00Z)'
+        required: false
+        type: string
+      
+      ltr_backup_id:
+        description: 'Long-term backup ID (from list-backups)'
+        required: false
+        type: string
+      
+      snapshot_name:
+        description: 'Snapshot name to restore from (for disk restore)'
+        required: false
+        type: string
+      
+      restore_to_new_resource:
+        description: 'Create new resource instead of overwriting'
+        required: true
+        type: boolean
+        default: true
+
+env:
+  RESOURCE_GROUP: tx02-prd-rg
+  SQL_SERVER_NAME: tx02-prd-sql
+  SQL_DATABASE_NAME: tx02-prd-db
+  AKS_CLUSTER_NAME: tx02-prd-aks
+  PRIMARY_REGION: eastus
+  BACKUP_REGION: westus2
+
+jobs:
+  list-backups:
+    if: ${{ github.event.inputs.resource_type == 'list-backups' }}
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Extract Azure Credentials
+        id: azure-creds
+        run: |
+          echo "CLIENT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientId')" >> $GITHUB_OUTPUT
+          echo "CLIENT_SECRET=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientSecret')" >> $GITHUB_OUTPUT
+          echo "TENANT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.tenantId')" >> $GITHUB_OUTPUT
+          echo "SUBSCRIPTION_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.subscriptionId')" >> $GITHUB_OUTPUT
+      
+      - name: Azure CLI Login
+        run: |
+          az login --service-principal \
+            -u "${{ steps.azure-creds.outputs.CLIENT_ID }}" \
+            -p "${{ steps.azure-creds.outputs.CLIENT_SECRET }}" \
+            --tenant "${{ steps.azure-creds.outputs.TENANT_ID }}"
+          az account set --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}"
+          
+          echo "✅ Logged into Azure"
+      
+      - name: List SQL Database short-term backups (PITR)
+        run: |
+          echo "============================================"
+          echo "📦 SQL Database Short-Term Backups (PITR)"
+          echo "============================================"
+          echo ""
+          
+          # Get database earliest restore date
+          EARLIEST_RESTORE=$(az sql db show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --server ${{ env.SQL_SERVER_NAME }} \
+            --name ${{ env.SQL_DATABASE_NAME }} \
+            --query earliestRestoreDate \
+            --output tsv)
+          
+          echo "Database: ${{ env.SQL_DATABASE_NAME }}"
+          echo "Earliest restore point: $EARLIEST_RESTORE"
+          echo ""
+          echo "💡 You can restore to any point-in-time between:"
+          echo "   From: $EARLIEST_RESTORE"
+          echo "   To:   $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo ""
+          echo "To restore, use:"
+          echo "  Resource Type: sql-pitr"
+          echo "  PITR Restore Time: <timestamp in ISO 8601 format>"
+          echo "  Example: 2025-01-15T10:30:00Z"
+          echo ""
+      
+      - name: List SQL Database long-term backups (LTR)
+        run: |
+          echo "============================================"
+          echo "📦 SQL Database Long-Term Backups (LTR)"
+          echo "============================================"
+          echo ""
+          
+          # List LTR backups
+          LTR_BACKUPS=$(az sql db ltr-backup list \
+            --location ${{ env.BACKUP_REGION }} \
+            --server ${{ env.SQL_SERVER_NAME }} \
+            --database ${{ env.SQL_DATABASE_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --output json 2>/dev/null || echo "[]")
+          
+          if [ "$LTR_BACKUPS" = "[]" ] || [ -z "$LTR_BACKUPS" ]; then
+            echo "⚠️ No long-term backups found yet"
+            echo ""
+            echo "Note: LTR backups are created according to the policy:"
+            echo "  - Weekly backups retained for configured weeks"
+            echo "  - Monthly backups retained for configured months"
+            echo ""
+            echo "First LTR backup may take up to 1 week to appear"
+          else
+            echo "Available LTR backups:"
+            echo "$LTR_BACKUPS" | jq -r '.[] | "\nBackup: \(.name)\n  Created: \(.backupTime)\n  Expiration: \(.backupExpirationTime)\n  Size: \(.databaseSizeInBytes / 1024 / 1024 / 1024 | floor) GB\n  ID: \(.id)"'
+            echo ""
+            echo "To restore from LTR backup, use:"
+            echo "  Resource Type: sql-ltr"
+            echo "  LTR Backup ID: <full backup resource ID from above>"
+          fi
+          echo ""
+      
+      - name: List disk snapshots
+        run: |
+          echo "============================================"
+          echo "📦 Disk Snapshots"
+          echo "============================================"
+          echo ""
+          
+          # Get AKS node resource group
+          AKS_NODE_RG=$(az aks show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.AKS_CLUSTER_NAME }} \
+            --query nodeResourceGroup \
+            --output tsv)
+          
+          echo "AKS Node Resource Group: $AKS_NODE_RG"
+          echo ""
+          
+          # List snapshots
+          SNAPSHOTS=$(az snapshot list \
+            --resource-group $AKS_NODE_RG \
+            --query "[?tags.Project=='tx02']" \
+            --output json)
+          
+          if [ "$SNAPSHOTS" = "[]" ] || [ -z "$SNAPSHOTS" ]; then
+            echo "⚠️ No snapshots found for TX02"
+            echo ""
+            echo "Run 'Configure Backup Automation' workflow first to create snapshots"
+          else
+            echo "Available snapshots:"
+            echo "$SNAPSHOTS" | jq -r '.[] | "\nSnapshot: \(.name)\n  Source Disk: \(.tags.SourceDisk // \"unknown\")\n  Created: \(.tags.CreatedAt // \"unknown\")\n  Size: \(.diskSizeGb) GB\n  Location: \(.location)"'
+            echo ""
+            echo "To restore from snapshot, use:"
+            echo "  Resource Type: disk"
+            echo "  Snapshot Name: <snapshot name from above>"
+          fi
+          echo ""
+      
+      - name: Display restore instructions
+        run: |
+          echo "============================================"
+          echo "💡 Restore Instructions"
+          echo "============================================"
+          echo ""
+          echo "To restore a resource, re-run this workflow with:"
+          echo ""
+          echo "1. SQL Database (Point-in-Time):"
+          echo "   - Resource Type: sql-pitr"
+          echo "   - PITR Restore Time: <timestamp>"
+          echo "   - Restore to New Resource: true (recommended)"
+          echo ""
+          echo "2. SQL Database (Long-Term Backup):"
+          echo "   - Resource Type: sql-ltr"
+          echo "   - LTR Backup ID: <full resource ID>"
+          echo "   - Restore to New Resource: true (recommended)"
+          echo ""
+          echo "3. Disk (from Snapshot):"
+          echo "   - Resource Type: disk"
+          echo "   - Snapshot Name: <snapshot name>"
+          echo "   - Restore to New Resource: true (required for disks)"
+          echo ""
+          echo "⚠️ Important:"
+          echo "  - Always test restores in non-production first"
+          echo "  - Restoring to new resource is safer (no data loss)"
+          echo "  - Verify restored data before switching connections"
+          echo "  - Document restore operations for audit"
+          echo ""
+
+  restore-sql-pitr:
+    if: ${{ github.event.inputs.resource_type == 'sql-pitr' && github.event.inputs.pitr_restore_time != '' }}
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Extract Azure Credentials
+        id: azure-creds
+        run: |
+          echo "CLIENT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientId')" >> $GITHUB_OUTPUT
+          echo "CLIENT_SECRET=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientSecret')" >> $GITHUB_OUTPUT
+          echo "TENANT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.tenantId')" >> $GITHUB_OUTPUT
+          echo "SUBSCRIPTION_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.subscriptionId')" >> $GITHUB_OUTPUT
+      
+      - name: Azure CLI Login
+        run: |
+          az login --service-principal \
+            -u "${{ steps.azure-creds.outputs.CLIENT_ID }}" \
+            -p "${{ steps.azure-creds.outputs.CLIENT_SECRET }}" \
+            --tenant "${{ steps.azure-creds.outputs.TENANT_ID }}"
+          az account set --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}"
+      
+      - name: Validate restore time
+        run: |
+          echo "Validating restore time..."
+          
+          EARLIEST_RESTORE=$(az sql db show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --server ${{ env.SQL_SERVER_NAME }} \
+            --name ${{ env.SQL_DATABASE_NAME }} \
+            --query earliestRestoreDate \
+            --output tsv)
+          
+          RESTORE_TIME="${{ github.event.inputs.pitr_restore_time }}"
+          
+          echo "Requested restore time: $RESTORE_TIME"
+          echo "Earliest available: $EARLIEST_RESTORE"
+          
+          # Compare dates (basic check)
+          if [[ "$RESTORE_TIME" < "$EARLIEST_RESTORE" ]]; then
+            echo "❌ Error: Restore time is before earliest restore point"
+            echo "   Please choose a time after $EARLIEST_RESTORE"
+            exit 1
+          fi
+          
+          echo "✅ Restore time is valid"
+      
+      - name: Prepare restore database name
+        id: prepare
+        run: |
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          
+          if [ "${{ github.event.inputs.restore_to_new_resource }}" = "true" ]; then
+            NEW_DB_NAME="${{ env.SQL_DATABASE_NAME }}-restored-$TIMESTAMP"
+          else
+            echo "⚠️ Warning: Restoring to new resource is recommended"
+            echo "   Proceeding with in-place restore..."
+            NEW_DB_NAME="${{ env.SQL_DATABASE_NAME }}"
+          fi
+          
+          echo "NEW_DB_NAME=$NEW_DB_NAME" >> $GITHUB_OUTPUT
+          echo "New database name: $NEW_DB_NAME"
+      
+      - name: Restore SQL Database (PITR)
+        run: |
+          echo "Starting point-in-time restore..."
+          echo "Source: ${{ env.SQL_DATABASE_NAME }}"
+          echo "Target: ${{ steps.prepare.outputs.NEW_DB_NAME }}"
+          echo "Restore Time: ${{ github.event.inputs.pitr_restore_time }}"
+          
+          # Get source database ID
+          SOURCE_DB_ID=$(az sql db show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --server ${{ env.SQL_SERVER_NAME }} \
+            --name ${{ env.SQL_DATABASE_NAME }} \
+            --query id \
+            --output tsv)
+          
+          # Restore database
+          az sql db restore \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --server ${{ env.SQL_SERVER_NAME }} \
+            --name ${{ steps.prepare.outputs.NEW_DB_NAME }} \
+            --source-database $SOURCE_DB_ID \
+            --time "${{ github.event.inputs.pitr_restore_time }}" \
+            --no-wait
+          
+          echo "✅ Restore operation initiated"
+          echo ""
+          echo "Note: This operation runs asynchronously"
+          echo "Check Azure Portal for restore progress"
+      
+      - name: Monitor restore progress
+        run: |
+          echo "Monitoring restore progress..."
+          echo "This may take 15-30 minutes depending on database size"
+          echo ""
+          
+          # Wait a bit for operation to register
+          sleep 30
+          
+          # Poll for completion (max 30 minutes)
+          MAX_ATTEMPTS=60
+          ATTEMPT=0
+          
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            STATUS=$(az sql db show \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --server ${{ env.SQL_SERVER_NAME }} \
+              --name ${{ steps.prepare.outputs.NEW_DB_NAME }} \
+              --query status \
+              --output tsv 2>/dev/null || echo "Creating")
+            
+            echo "[$ATTEMPT/$MAX_ATTEMPTS] Current status: $STATUS"
+            
+            if [ "$STATUS" = "Online" ]; then
+              echo ""
+              echo "✅ Restore completed successfully!"
+              break
+            fi
+            
+            sleep 30
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+          
+          if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+            echo "⚠️ Monitoring timeout reached"
+            echo "   Check Azure Portal for final status"
+          fi
+      
+      - name: Verify restored database
+        run: |
+          echo "Verifying restored database..."
+          
+          az sql db show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --server ${{ env.SQL_SERVER_NAME }} \
+            --name ${{ steps.prepare.outputs.NEW_DB_NAME }} \
+            --query "{Name: name, Status: status, RestorePoint: earliestRestoreDate, Size: maxSizeBytes, SKU: currentSku.name}" \
+            --output table
+          
+          echo ""
+          echo "============================================"
+          echo "✅ SQL Database Restore Complete"
+          echo "============================================"
+          echo "Server: ${{ env.SQL_SERVER_NAME }}.database.windows.net"
+          echo "Database: ${{ steps.prepare.outputs.NEW_DB_NAME }}"
+          echo "Restored from: ${{ github.event.inputs.pitr_restore_time }}"
+          echo ""
+          echo "💡 Next Steps:"
+          echo "  1. Verify data integrity in restored database"
+          echo "  2. Update application connection string if needed"
+          echo "  3. Test application with restored database"
+          echo "  4. If successful, consider switching production to restored DB"
+          echo "  5. Delete old database once verified (if applicable)"
+          echo ""
+
+  restore-sql-ltr:
+    if: ${{ github.event.inputs.resource_type == 'sql-ltr' && github.event.inputs.ltr_backup_id != '' }}
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Extract Azure Credentials
+        id: azure-creds
+        run: |
+          echo "CLIENT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientId')" >> $GITHUB_OUTPUT
+          echo "CLIENT_SECRET=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientSecret')" >> $GITHUB_OUTPUT
+          echo "TENANT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.tenantId')" >> $GITHUB_OUTPUT
+          echo "SUBSCRIPTION_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.subscriptionId')" >> $GITHUB_OUTPUT
+      
+      - name: Azure CLI Login
+        run: |
+          az login --service-principal \
+            -u "${{ steps.azure-creds.outputs.CLIENT_ID }}" \
+            -p "${{ steps.azure-creds.outputs.CLIENT_SECRET }}" \
+            --tenant "${{ steps.azure-creds.outputs.TENANT_ID }}"
+          az account set --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}"
+      
+      - name: Prepare restore database name
+        id: prepare
+        run: |
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          NEW_DB_NAME="${{ env.SQL_DATABASE_NAME }}-ltr-restored-$TIMESTAMP"
+          
+          echo "NEW_DB_NAME=$NEW_DB_NAME" >> $GITHUB_OUTPUT
+          echo "New database name: $NEW_DB_NAME"
+      
+      - name: Restore from long-term backup
+        run: |
+          echo "Starting long-term backup restore..."
+          echo "Backup ID: ${{ github.event.inputs.ltr_backup_id }}"
+          echo "Target: ${{ steps.prepare.outputs.NEW_DB_NAME }}"
+          
+          # Restore from LTR backup
+          az sql db ltr-backup restore \
+            --dest-database ${{ steps.prepare.outputs.NEW_DB_NAME }} \
+            --dest-resource-group ${{ env.RESOURCE_GROUP }} \
+            --dest-server ${{ env.SQL_SERVER_NAME }} \
+            --backup-id "${{ github.event.inputs.ltr_backup_id }}" \
+            --no-wait
+          
+          echo "✅ Restore operation initiated"
+      
+      - name: Monitor restore progress
+        run: |
+          echo "Monitoring restore progress..."
+          sleep 30
+          
+          MAX_ATTEMPTS=60
+          ATTEMPT=0
+          
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            STATUS=$(az sql db show \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --server ${{ env.SQL_SERVER_NAME }} \
+              --name ${{ steps.prepare.outputs.NEW_DB_NAME }} \
+              --query status \
+              --output tsv 2>/dev/null || echo "Creating")
+            
+            echo "[$ATTEMPT/$MAX_ATTEMPTS] Current status: $STATUS"
+            
+            if [ "$STATUS" = "Online" ]; then
+              echo "✅ Restore completed successfully!"
+              break
+            fi
+            
+            sleep 30
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+
+  restore-disk:
+    if: ${{ github.event.inputs.resource_type == 'disk' && github.event.inputs.snapshot_name != '' }}
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Extract Azure Credentials
+        id: azure-creds
+        run: |
+          echo "CLIENT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientId')" >> $GITHUB_OUTPUT
+          echo "CLIENT_SECRET=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientSecret')" >> $GITHUB_OUTPUT
+          echo "TENANT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.tenantId')" >> $GITHUB_OUTPUT
+          echo "SUBSCRIPTION_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.subscriptionId')" >> $GITHUB_OUTPUT
+      
+      - name: Azure CLI Login
+        run: |
+          az login --service-principal \
+            -u "${{ steps.azure-creds.outputs.CLIENT_ID }}" \
+            -p "${{ steps.azure-creds.outputs.CLIENT_SECRET }}" \
+            --tenant "${{ steps.azure-creds.outputs.TENANT_ID }}"
+          az account set --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}"
+      
+      - name: Get snapshot details
+        id: snapshot
+        run: |
+          AKS_NODE_RG=$(az aks show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.AKS_CLUSTER_NAME }} \
+            --query nodeResourceGroup \
+            --output tsv)
+          
+          echo "AKS_NODE_RG=$AKS_NODE_RG" >> $GITHUB_OUTPUT
+          
+          # Get snapshot info
+          SNAPSHOT_ID=$(az snapshot show \
+            --resource-group $AKS_NODE_RG \
+            --name ${{ github.event.inputs.snapshot_name }} \
+            --query id \
+            --output tsv)
+          
+          SNAPSHOT_SIZE=$(az snapshot show \
+            --resource-group $AKS_NODE_RG \
+            --name ${{ github.event.inputs.snapshot_name }} \
+            --query diskSizeGb \
+            --output tsv)
+          
+          SOURCE_DISK=$(az snapshot show \
+            --resource-group $AKS_NODE_RG \
+            --name ${{ github.event.inputs.snapshot_name }} \
+            --query "tags.SourceDisk" \
+            --output tsv)
+          
+          echo "SNAPSHOT_ID=$SNAPSHOT_ID" >> $GITHUB_OUTPUT
+          echo "SNAPSHOT_SIZE=$SNAPSHOT_SIZE" >> $GITHUB_OUTPUT
+          echo "SOURCE_DISK=$SOURCE_DISK" >> $GITHUB_OUTPUT
+          
+          echo "Snapshot ID: $SNAPSHOT_ID"
+          echo "Size: $SNAPSHOT_SIZE GB"
+          echo "Source Disk: $SOURCE_DISK"
+      
+      - name: Create disk from snapshot
+        id: restore
+        run: |
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          NEW_DISK_NAME="${{ steps.snapshot.outputs.SOURCE_DISK }}-restored-$TIMESTAMP"
+          
+          echo "Creating disk from snapshot..."
+          echo "Snapshot: ${{ github.event.inputs.snapshot_name }}"
+          echo "New Disk: $NEW_DISK_NAME"
+          
+          az disk create \
+            --resource-group ${{ steps.snapshot.outputs.AKS_NODE_RG }} \
+            --name $NEW_DISK_NAME \
+            --source ${{ steps.snapshot.outputs.SNAPSHOT_ID }} \
+            --location ${{ env.PRIMARY_REGION }} \
+            --sku Premium_LRS \
+            --tags \
+              Project=tx02 \
+              Environment=${{ github.event.inputs.environment }} \
+              RestoredFrom=${{ github.event.inputs.snapshot_name }} \
+              RestoreDate=$TIMESTAMP
+          
+          echo "NEW_DISK_NAME=$NEW_DISK_NAME" >> $GITHUB_OUTPUT
+          echo "✅ Disk created: $NEW_DISK_NAME"
+      
+      - name: Display restore information
+        run: |
+          echo "============================================"
+          echo "✅ Disk Restore Complete"
+          echo "============================================"
+          echo "Resource Group: ${{ steps.snapshot.outputs.AKS_NODE_RG }}"
+          echo "New Disk: ${{ steps.restore.outputs.NEW_DISK_NAME }}"
+          echo "Size: ${{ steps.snapshot.outputs.SNAPSHOT_SIZE }} GB"
+          echo "Source Snapshot: ${{ github.event.inputs.snapshot_name }}"
+          echo ""
+          echo "💡 Next Steps:"
+          echo "  1. Attach disk to VM or use in Kubernetes PVC"
+          echo "  2. Mount and verify data integrity"
+          echo "  3. Update application to use restored disk if needed"
+          echo ""
+          echo "To use in Kubernetes:"
+          echo "  - Create PV with disk resource ID"
+          echo "  - Create PVC bound to the PV"
+          echo "  - Update pod to use the PVC"
+          echo ""
+      
+      - name: Send Slack notification
+        if: always()
+        continue-on-error: true
+        run: |
+          if [ -z "${{ secrets.SLACK_WEBHOOK_URL }}" ]; then
+            exit 0
+          fi
+          
+          if [ "${{ job.status }}" = "success" ]; then
+            COLOR="good"
+            EMOJI="✅"
+            STATUS="SUCCESS"
+          else
+            COLOR="danger"
+            EMOJI="❌"
+            STATUS="FAILED"
+          fi
+          
+          curl -X POST "${{ secrets.SLACK_WEBHOOK_URL }}" \
+            -H 'Content-Type: application/json' \
+            -d "{
+              \"attachments\": [{
+                \"color\": \"$COLOR\",
+                \"title\": \"$EMOJI Backup Restore $STATUS\",
+                \"text\": \"Type: ${{ github.event.inputs.resource_type }}\\nEnvironment: ${{ github.event.inputs.environment }}\\nRestore to New: ${{ github.event.inputs.restore_to_new_resource }}\",
+                \"footer\": \"GitHub Actions - TX02\",
+                \"ts\": $(date +%s)
+              }]
+            }"

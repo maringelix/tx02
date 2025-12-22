@@ -653,6 +653,7 @@ Veja [TROUBLESHOOTING.md](TROUBLESHOOTING.md) para mais detalhes.
 - [GITHUB_SECRETS.md](GITHUB_SECRETS.md) - Configuração de secrets
 - [QUICK_REFERENCE.md](QUICK_REFERENCE.md) - Referência rápida de comandos
 - [SECURITY.md](SECURITY.md) - Políticas de segurança
+- [BACKUP_STRATEGY.md](BACKUP_STRATEGY.md) - 🗄️ Estratégia de backup e disaster recovery
 
 ---
 
@@ -667,6 +668,7 @@ Veja [TROUBLESHOOTING.md](TROUBLESHOOTING.md) para mais detalhes.
 - [x] **✅ CI/CD Completo**: GitHub Actions com deploy automático (Terraform + AKS)
 - [x] **✅ Container Registry**: ACR integrado com AKS (AcrPull role automático)
 - [x] **✅ SQL Database Free Tier**: Workaround para limitação do free tier implementado
+- [x] **✅ Backup Automation**: Workflows de backup e restore para SQL Database e AKS volumes
 - [ ] **Logs Centralizados**: Implementar Azure Log Analytics ou Stack ELK
 - [ ] **APM (Application Performance Monitoring)**: Adicionar Azure Application Insights
 - [ ] **Blue/Green Deployment**: Implementar estratégia de deploy avançada no AKS
@@ -677,7 +679,6 @@ Veja [TROUBLESHOOTING.md](TROUBLESHOOTING.md) para mais detalhes.
 - [ ] **Security Scanning - IaC**: Adicionar tfsec/checkov para Terraform, gitleaks para secrets
 - [ ] **Security Scanning - DAST**: Adicionar OWASP ZAP para testes dinâmicos
 - [ ] **Chaos Engineering**: Implementar Azure Chaos Studio para testes de resiliência
-- [ ] **Backup Automation**: Implementar Azure Backup para AKS volumes e SQL Database
 - [ ] **Certificate Management**: Integrar cert-manager com Let's Encrypt para HTTPS automático
 - [ ] **WAF (Web Application Firewall)**: Adicionar Azure Application Gateway com WAF
 
