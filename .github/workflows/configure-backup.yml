@@ -302,7 +302,7 @@ jobs:
                 --resource-group $DISK_RG \
                 --set tags.Project=tx02 \
                 --set tags.Environment=${{ github.event.inputs.environment }} \
-                --set 'tags.BackupEnabled=true' \
+                --set tags.BackupEnabled=yes \
                 --set tags.BackupRetention=${{ github.event.inputs.backup_retention_days }}
               
               echo "✅ Tagged: $DISK_NAME"
