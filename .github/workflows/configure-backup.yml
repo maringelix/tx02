@@ -300,7 +300,10 @@ jobs:
               az disk update \
                 --name $DISK_NAME \
                 --resource-group $DISK_RG \
-                --tags Project=tx02 Environment=${{ github.event.inputs.environment }} BackupEnabled=true BackupRetention=${{ github.event.inputs.backup_retention_days }}
+                --set tags.Project=tx02 \
+                --set tags.Environment=${{ github.event.inputs.environment }} \
+                --set tags.BackupEnabled=true \
+                --set tags.BackupRetention=${{ github.event.inputs.backup_retention_days }}
               
               echo "✅ Tagged: $DISK_NAME"
             done
