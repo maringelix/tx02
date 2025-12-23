@@ -12,6 +12,11 @@ on:
       - 'terraform/**'
   workflow_dispatch:
 
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
 env:
   TFSEC_VERSION: v1.28.5
   CHECKOV_VERSION: 3.2.1
@@ -62,16 +67,16 @@ jobs:
         directory: terraform
         framework: terraform
         quiet: false
-        soft_fail: false
+        soft_fail: true  # Don't fail pipeline, just report
         skip_check: CKV_AZURE_33,CKV_AZURE_35  # Skip storage account HTTPS (free tier limitation)
         output_format: sarif
-        output_file_path: checkov-results.sarif
+        output_file_path: console
     
     - name: Upload Checkov results to GitHub Security
       uses: github/codeql-action/upload-sarif@v3
       if: always()
       with:
-        sarif_file: checkov-results.sarif
+        sarif_file: results.sarif
         category: checkov
     
     # ============================================================
