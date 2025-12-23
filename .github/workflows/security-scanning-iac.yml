@@ -46,6 +46,7 @@ jobs:
         working_directory: terraform
         soft_fail: false
         format: sarif
+        output: results.sarif
         additional_args: >
           --exclude-downloaded-modules
           --minimum-severity MEDIUM
@@ -70,13 +71,13 @@ jobs:
         soft_fail: true  # Don't fail pipeline, just report
         skip_check: CKV_AZURE_33,CKV_AZURE_35  # Skip storage account HTTPS (free tier limitation)
         output_format: sarif
-        output_file_path: console
+        output_file_path: checkov-results.sarif
     
     - name: Upload Checkov results to GitHub Security
       uses: github/codeql-action/upload-sarif@v3
       if: always()
       with:
-        sarif_file: results.sarif
+        sarif_file: checkov-results.sarif
         category: checkov
     
     # ============================================================
