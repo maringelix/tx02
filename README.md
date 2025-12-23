@@ -658,6 +658,7 @@ Veja [TROUBLESHOOTING.md](TROUBLESHOOTING.md) para mais detalhes.
 - [LOGGING_STRATEGY.md](LOGGING_STRATEGY.md) - 📊 Logs centralizados com Azure Log Analytics
 - [APM_STRATEGY.md](APM_STRATEGY.md) - 📈 Application Performance Monitoring com Azure Application Insights
 - [ARGOCD.md](ARGOCD.md) - 🚀 GitOps com ArgoCD para continuous delivery
+- [SECURITY_SCANNING_IAC_DAST.md](SECURITY_SCANNING_IAC_DAST.md) - 🔒 Security scanning IaC (tfsec/Checkov/Gitleaks) e DAST (OWASP ZAP)
 
 ---
 
@@ -680,8 +681,8 @@ Veja [TROUBLESHOOTING.md](TROUBLESHOOTING.md) para mais detalhes.
 - [ ] **Service Mesh**: Adicionar Istio, Linkerd ou Azure Service Mesh
 - [ ] **Disaster Recovery**: Expandir para multi-region com failover automático
 - [ ] **Cost Optimization**: Implementar Azure Cost Management automation e budget alerts
-- [ ] **Security Scanning - IaC**: Adicionar tfsec/checkov para Terraform, gitleaks para secrets
-- [ ] **Security Scanning - DAST**: Adicionar OWASP ZAP para testes dinâmicos
+- [x] **✅ Security Scanning - IaC**: tfsec/Checkov para Terraform, Gitleaks para secrets
+- [x] **✅ Security Scanning - DAST**: OWASP ZAP implementado para testes dinâmicos
 - [ ] **Chaos Engineering**: Implementar Azure Chaos Studio para testes de resiliência
 - [ ] **Certificate Management**: Integrar cert-manager com Let's Encrypt para HTTPS automático
 - [ ] **WAF (Web Application Firewall)**: Adicionar Azure Application Gateway com WAF

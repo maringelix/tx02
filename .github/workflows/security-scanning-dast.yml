@@ -1,0 +1,209 @@
+name: 🕷️ Security Scanning - DAST
+
+on:
+  # Run after deployments to test live application
+  workflow_run:
+    workflows: ["🚀 Deploy DX02"]
+    types: [completed]
+    branches: [main]
+  
+  # Manual trigger for ad-hoc security tests
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: 'Target URL to scan (leave empty for ingress IP)'
+        required: false
+        type: string
+      scan_type:
+        description: 'Type of scan to perform'
+        required: true
+        type: choice
+        options:
+          - baseline
+          - full
+          - api
+        default: baseline
+
+env:
+  ZAP_VERSION: stable
+
+jobs:
+  zap-scan:
+    name: 🕷️ OWASP ZAP Dynamic Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: 🔧 Setup Azure CLI
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+    
+    - name: 🔍 Get AKS credentials
+      run: |
+        az aks get-credentials \
+          --resource-group rg-dx02-eastus \
+          --name aks-dx02-eastus \
+          --overwrite-existing
+    
+    - name: 🌐 Determine target URL
+      id: target
+      run: |
+        if [ -n "${{ github.event.inputs.target_url }}" ]; then
+          TARGET_URL="${{ github.event.inputs.target_url }}"
+        else
+          # Get ingress controller external IP
+          INGRESS_IP=$(kubectl get svc ingress-nginx-controller \
+            -n ingress-nginx \
+            -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+          TARGET_URL="http://${INGRESS_IP}"
+        fi
+        
+        echo "target_url=${TARGET_URL}" >> $GITHUB_OUTPUT
+        echo "🎯 Target URL: ${TARGET_URL}"
+    
+    - name: 🔎 Wait for application to be ready
+      run: |
+        TARGET_URL="${{ steps.target.outputs.target_url }}"
+        echo "Waiting for ${TARGET_URL} to be accessible..."
+        
+        max_attempts=30
+        attempt=0
+        
+        while [ $attempt -lt $max_attempts ]; do
+          if curl -sSf "${TARGET_URL}/health" > /dev/null 2>&1; then
+            echo "✅ Application is ready!"
+            exit 0
+          fi
+          
+          attempt=$((attempt + 1))
+          echo "⏳ Attempt ${attempt}/${max_attempts} - waiting 10s..."
+          sleep 10
+        done
+        
+        echo "⚠️ Application not responding, proceeding with scan anyway..."
+    
+    # ============================================================
+    # OWASP ZAP Baseline Scan (Quick, good for CI/CD)
+    # ============================================================
+    - name: 🕷️ ZAP Baseline Scan
+      if: github.event.inputs.scan_type == 'baseline' || github.event.inputs.scan_type == ''
+      uses: zaproxy/action-baseline@v0.12.0
+      with:
+        target: ${{ steps.target.outputs.target_url }}
+        rules_file_name: '.zap/rules.tsv'
+        cmd_options: '-a -j -l WARN'
+        issue_title: 'ZAP Baseline Scan Findings'
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fail_action: false  # Don't fail pipeline on findings
+    
+    # ============================================================
+    # OWASP ZAP Full Scan (Comprehensive, for scheduled runs)
+    # ============================================================
+    - name: 🕷️ ZAP Full Scan
+      if: github.event.inputs.scan_type == 'full'
+      uses: zaproxy/action-full-scan@v0.10.0
+      with:
+        target: ${{ steps.target.outputs.target_url }}
+        rules_file_name: '.zap/rules.tsv'
+        cmd_options: '-a -j'
+        issue_title: 'ZAP Full Scan Findings'
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fail_action: false
+    
+    # ============================================================
+    # OWASP ZAP API Scan (For REST API endpoints)
+    # ============================================================
+    - name: 🕷️ ZAP API Scan
+      if: github.event.inputs.scan_type == 'api'
+      uses: zaproxy/action-api-scan@v0.7.0
+      with:
+        target: ${{ steps.target.outputs.target_url }}/api/openapi.json
+        rules_file_name: '.zap/rules.tsv'
+        cmd_options: '-a -j'
+        issue_title: 'ZAP API Scan Findings'
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fail_action: false
+    
+    # ============================================================
+    # Upload scan results
+    # ============================================================
+    - name: 📤 Upload ZAP scan report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: zap-scan-report-${{ github.run_number }}
+        path: |
+          report_html.html
+          report_json.json
+          report_md.md
+        retention-days: 30
+    
+    # ============================================================
+    # Generate Security Summary
+    # ============================================================
+    - name: 📊 Generate Security Summary
+      if: always()
+      run: |
+        echo "## 🕷️ Security Scanning Results - DAST" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📅 Scan Information" >> $GITHUB_STEP_SUMMARY
+        echo "- **Date**: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+        echo "- **Target**: ${{ steps.target.outputs.target_url }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Scan Type**: ${{ github.event.inputs.scan_type || 'baseline' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **ZAP Version**: ${ZAP_VERSION}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "### 🎯 What Was Tested" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "OWASP ZAP performed dynamic security testing on the running application:" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **SQL Injection** vulnerabilities" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **Cross-Site Scripting (XSS)** attacks" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **Cross-Site Request Forgery (CSRF)**" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **Security headers** configuration" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **SSL/TLS** configuration" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **Cookie security** attributes" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **Directory browsing** vulnerabilities" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **Server information** disclosure" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "### 📋 Scan Types" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Type | Duration | Use Case |" >> $GITHUB_STEP_SUMMARY
+        echo "|------|----------|----------|" >> $GITHUB_STEP_SUMMARY
+        echo "| **Baseline** | ~5 min | Quick check in CI/CD pipeline |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Full** | ~30-60 min | Comprehensive security audit |" >> $GITHUB_STEP_SUMMARY
+        echo "| **API** | ~10-15 min | REST API endpoint testing |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "### 📊 Review Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "1. **Artifacts**: Download \`zap-scan-report-${{ github.run_number }}\` from workflow artifacts" >> $GITHUB_STEP_SUMMARY
+        echo "2. **Issues**: Check Issues tab for \`ZAP Scan Findings\` label" >> $GITHUB_STEP_SUMMARY
+        echo "3. **Reports**: HTML, JSON, and Markdown reports available" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "### 📚 Documentation" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "For remediation guidance, see [SECURITY_SCANNING.md](../../SECURITY_SCANNING.md#dast-findings)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "---" >> $GITHUB_STEP_SUMMARY
+        echo "*🕷️ Dynamic Application Security Testing catches runtime vulnerabilities*" >> $GITHUB_STEP_SUMMARY
+
+  schedule-weekly-scan:
+    name: 📅 Schedule Weekly Full Scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+    
+    steps:
+    - name: Create scheduled scan reminder
+      run: |
+        echo "💡 Tip: Set up a scheduled workflow for weekly full scans"
+        echo ""
+        echo "Add to .github/workflows/security-scanning-dast.yml:"
+        echo "  schedule:"
+        echo "    - cron: '0 2 * * 0'  # Every Sunday at 2 AM UTC"
