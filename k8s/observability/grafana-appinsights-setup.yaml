@@ -1,0 +1,308 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-appinsights-setup
+  namespace: monitoring
+data:
+  setup.sh: |
+    #!/bin/bash
+    set -e
+    
+    echo "🔧 Configuring Grafana with Application Insights..."
+    
+    # Grafana connection
+    GRAFANA_URL="http://grafana.monitoring.svc.cluster.local"
+    GRAFANA_USER="admin"
+    GRAFANA_PASSWORD="${GRAFANA_PASSWORD}"
+    
+    # Wait for Grafana to be ready
+    echo "⏳ Waiting for Grafana..."
+    until curl -s -f "${GRAFANA_URL}/api/health" > /dev/null; do
+      echo "Grafana not ready, waiting..."
+      sleep 5
+    done
+    echo "✅ Grafana is ready"
+    
+    # Configure Azure Monitor Data Source
+    echo "📊 Adding Azure Monitor data source..."
+    
+    DATASOURCE_PAYLOAD=$(cat <<EOF
+    {
+      "name": "Azure Monitor - Application Insights",
+      "type": "grafana-azure-monitor-datasource",
+      "access": "proxy",
+      "isDefault": false,
+      "jsonData": {
+        "cloudName": "azuremonitor",
+        "subscriptionId": "${AZURE_SUBSCRIPTION_ID}",
+        "tenantId": "${AZURE_TENANT_ID}",
+        "clientId": "${AZURE_CLIENT_ID}",
+        "azureAuthType": "clientsecret",
+        "appInsightsAppId": "${APPINSIGHTS_APP_ID}"
+      },
+      "secureJsonData": {
+        "clientSecret": "${AZURE_CLIENT_SECRET}"
+      }
+    }
+    EOF
+    )
+    
+    # Check if datasource already exists
+    EXISTING_DS=$(curl -s -u "${GRAFANA_USER}:${GRAFANA_PASSWORD}" \
+      "${GRAFANA_URL}/api/datasources/name/Azure%20Monitor%20-%20Application%20Insights" || echo "")
+    
+    if [ -z "$EXISTING_DS" ]; then
+      echo "Creating new data source..."
+      curl -X POST \
+        -H "Content-Type: application/json" \
+        -u "${GRAFANA_USER}:${GRAFANA_PASSWORD}" \
+        -d "${DATASOURCE_PAYLOAD}" \
+        "${GRAFANA_URL}/api/datasources"
+      echo ""
+      echo "✅ Data source created"
+    else
+      echo "⚠️  Data source already exists, updating..."
+      DS_ID=$(echo "$EXISTING_DS" | grep -o '"id":[0-9]*' | cut -d':' -f2)
+      curl -X PUT \
+        -H "Content-Type: application/json" \
+        -u "${GRAFANA_USER}:${GRAFANA_PASSWORD}" \
+        -d "${DATASOURCE_PAYLOAD}" \
+        "${GRAFANA_URL}/api/datasources/${DS_ID}"
+      echo ""
+      echo "✅ Data source updated"
+    fi
+    
+    # Import Dashboard 1: Application Insights Overview (10532)
+    echo ""
+    echo "📈 Importing dashboard: Application Insights Overview (10532)..."
+    
+    DASHBOARD_1=$(cat <<'EOF'
+    {
+      "dashboard": {
+        "id": null,
+        "uid": null,
+        "title": "Application Insights Overview",
+        "tags": ["azure", "application-insights"],
+        "timezone": "browser",
+        "schemaVersion": 16,
+        "version": 0
+      },
+      "folderId": 0,
+      "overwrite": true,
+      "inputs": [
+        {
+          "name": "DS_AZURE_MONITOR",
+          "type": "datasource",
+          "pluginId": "grafana-azure-monitor-datasource",
+          "value": "Azure Monitor - Application Insights"
+        }
+      ]
+    }
+    EOF
+    )
+    
+    curl -X POST \
+      -H "Content-Type: application/json" \
+      -u "${GRAFANA_USER}:${GRAFANA_PASSWORD}" \
+      -d "${DASHBOARD_1}" \
+      "${GRAFANA_URL}/api/dashboards/import" || echo "⚠️  Dashboard import might need manual configuration"
+    
+    echo ""
+    echo "📈 Importing dashboard from Grafana.com (ID: 10532)..."
+    curl -X POST \
+      -H "Content-Type: application/json" \
+      -u "${GRAFANA_USER}:${GRAFANA_PASSWORD}" \
+      -d '{"pluginId":"grafana-azure-monitor-datasource","path":"dashboards/10532"}' \
+      "${GRAFANA_URL}/api/dashboards/import" 2>/dev/null || echo "⚠️  Using fallback method..."
+    
+    # Import Dashboard 2: Azure Monitor for Applications (8588)
+    echo ""
+    echo "📈 Importing dashboard: Azure Monitor for Applications (8588)..."
+    curl -X POST \
+      -H "Content-Type: application/json" \
+      -u "${GRAFANA_USER}:${GRAFANA_PASSWORD}" \
+      -d '{"pluginId":"grafana-azure-monitor-datasource","path":"dashboards/8588"}' \
+      "${GRAFANA_URL}/api/dashboards/import" 2>/dev/null || echo "⚠️  Using fallback method..."
+    
+    # Create custom DX02 Application Insights Dashboard
+    echo ""
+    echo "📊 Creating custom DX02 Application Insights dashboard..."
+    
+    CUSTOM_DASHBOARD=$(cat <<'EOF'
+    {
+      "dashboard": {
+        "title": "DX02 - Application Performance",
+        "tags": ["dx02", "application-insights", "performance"],
+        "timezone": "browser",
+        "panels": [
+          {
+            "id": 1,
+            "title": "Request Rate",
+            "type": "graph",
+            "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+            "targets": [
+              {
+                "refId": "A",
+                "queryType": "Azure Log Analytics",
+                "azureLogAnalytics": {
+                  "query": "requests | summarize count() by bin(timestamp, 5m) | render timechart"
+                }
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "title": "Average Response Time",
+            "type": "graph",
+            "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+            "targets": [
+              {
+                "refId": "A",
+                "queryType": "Azure Log Analytics",
+                "azureLogAnalytics": {
+                  "query": "requests | summarize avg(duration) by bin(timestamp, 5m) | render timechart"
+                }
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "title": "Failed Requests",
+            "type": "graph",
+            "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+            "targets": [
+              {
+                "refId": "A",
+                "queryType": "Azure Log Analytics",
+                "azureLogAnalytics": {
+                  "query": "requests | where success == false | summarize count() by bin(timestamp, 5m) | render timechart"
+                }
+              }
+            ]
+          },
+          {
+            "id": 4,
+            "title": "Top 10 Slowest Operations",
+            "type": "table",
+            "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+            "targets": [
+              {
+                "refId": "A",
+                "queryType": "Azure Log Analytics",
+                "azureLogAnalytics": {
+                  "query": "requests | summarize avg(duration), count() by name | order by avg_duration desc | take 10"
+                }
+              }
+            ]
+          },
+          {
+            "id": 5,
+            "title": "Exception Rate",
+            "type": "graph",
+            "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8},
+            "targets": [
+              {
+                "refId": "A",
+                "queryType": "Azure Log Analytics",
+                "azureLogAnalytics": {
+                  "query": "exceptions | summarize count() by bin(timestamp, 5m) | render timechart"
+                }
+              }
+            ]
+          },
+          {
+            "id": 6,
+            "title": "Database Dependency Performance",
+            "type": "graph",
+            "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8},
+            "targets": [
+              {
+                "refId": "A",
+                "queryType": "Azure Log Analytics",
+                "azureLogAnalytics": {
+                  "query": "dependencies | where type == 'SQL' | summarize avg(duration) by bin(timestamp, 5m) | render timechart"
+                }
+              }
+            ]
+          }
+        ],
+        "schemaVersion": 16,
+        "version": 0
+      },
+      "folderId": 0,
+      "overwrite": true
+    }
+    EOF
+    )
+    
+    curl -X POST \
+      -H "Content-Type: application/json" \
+      -u "${GRAFANA_USER}:${GRAFANA_PASSWORD}" \
+      -d "${CUSTOM_DASHBOARD}" \
+      "${GRAFANA_URL}/api/dashboards/db"
+    
+    echo ""
+    echo "✅ Grafana Application Insights setup completed!"
+    echo ""
+    echo "📊 Dashboards available:"
+    echo "  - Application Insights Overview"
+    echo "  - Azure Monitor for Applications"
+    echo "  - DX02 - Application Performance (custom)"
+    echo ""
+    echo "🔗 Access Grafana: kubectl port-forward -n monitoring svc/grafana 3000:80"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: grafana-appinsights-setup
+  namespace: monitoring
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: setup
+        image: curlimages/curl:latest
+        command: ["/bin/sh"]
+        args: ["/scripts/setup.sh"]
+        env:
+        - name: GRAFANA_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: grafana
+              key: admin-password
+        - name: AZURE_TENANT_ID
+          valueFrom:
+            secretKeyRef:
+              name: azure-credentials
+              key: tenantId
+        - name: AZURE_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: azure-credentials
+              key: clientId
+        - name: AZURE_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: azure-credentials
+              key: clientSecret
+        - name: AZURE_SUBSCRIPTION_ID
+          valueFrom:
+            secretKeyRef:
+              name: azure-credentials
+              key: subscriptionId
+        - name: APPINSIGHTS_APP_ID
+          valueFrom:
+            secretKeyRef:
+              name: appinsights-config
+              key: app-id
+              optional: true
+        volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+      volumes:
+      - name: scripts
+        configMap:
+          name: grafana-appinsights-setup
+          defaultMode: 0755

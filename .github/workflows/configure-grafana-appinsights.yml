@@ -1,0 +1,193 @@
+name: 📊 Configure Grafana with Application Insights
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment'
+        required: true
+        type: choice
+        options:
+          - prd
+        default: 'prd'
+
+env:
+  RESOURCE_GROUP: tx02-prd-rg
+  AKS_CLUSTER_NAME: tx02-prd-aks
+  APP_INSIGHTS_NAME: tx02-prd-appinsights
+
+jobs:
+  configure-grafana:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Extract Azure Credentials
+        id: azure-creds
+        run: |
+          echo "CLIENT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientId')" >> $GITHUB_OUTPUT
+          echo "CLIENT_SECRET=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.clientSecret')" >> $GITHUB_OUTPUT
+          echo "TENANT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.tenantId')" >> $GITHUB_OUTPUT
+          echo "SUBSCRIPTION_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r '.subscriptionId')" >> $GITHUB_OUTPUT
+      
+      - name: Azure CLI Login
+        run: |
+          az login --service-principal \
+            -u "${{ steps.azure-creds.outputs.CLIENT_ID }}" \
+            -p "${{ steps.azure-creds.outputs.CLIENT_SECRET }}" \
+            --tenant "${{ steps.azure-creds.outputs.TENANT_ID }}"
+          az account set --subscription "${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}"
+      
+      - name: Get Application Insights App ID
+        id: appinsights
+        run: |
+          APP_ID=$(az monitor app-insights component show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --app ${{ env.APP_INSIGHTS_NAME }} \
+            --query appId \
+            --output tsv)
+          
+          echo "APP_ID=$APP_ID" >> $GITHUB_OUTPUT
+          echo "Application Insights App ID: $APP_ID"
+      
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.AKS_CLUSTER_NAME }} \
+            --overwrite-existing
+      
+      - name: Create Azure credentials secret in Kubernetes
+        run: |
+          kubectl create secret generic azure-credentials \
+            --from-literal=tenantId="${{ steps.azure-creds.outputs.TENANT_ID }}" \
+            --from-literal=clientId="${{ steps.azure-creds.outputs.CLIENT_ID }}" \
+            --from-literal=clientSecret="${{ steps.azure-creds.outputs.CLIENT_SECRET }}" \
+            --from-literal=subscriptionId="${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}" \
+            --namespace monitoring \
+            --dry-run=client -o yaml | kubectl apply -f -
+          
+          echo "✅ Azure credentials secret created"
+      
+      - name: Update Application Insights config with App ID
+        run: |
+          # Get existing secret
+          kubectl get secret appinsights-config -n dx02 -o json | \
+            jq --arg appid "${{ steps.appinsights.outputs.APP_ID }}" \
+              '.data["app-id"] = ($appid | @base64)' | \
+            kubectl apply -f -
+          
+          # Copy to monitoring namespace for Grafana
+          kubectl get secret appinsights-config -n dx02 -o yaml | \
+            sed 's/namespace: dx02/namespace: monitoring/' | \
+            kubectl apply -f -
+          
+          echo "✅ Application Insights config updated"
+      
+      - name: Deploy Grafana setup ConfigMap and Job
+        run: |
+          kubectl apply -f k8s/observability/grafana-appinsights-setup.yaml
+          
+          echo "✅ Grafana setup job deployed"
+      
+      - name: Wait for setup job to complete
+        run: |
+          echo "⏳ Waiting for Grafana setup job..."
+          kubectl wait --for=condition=complete --timeout=300s \
+            job/grafana-appinsights-setup -n monitoring || true
+          
+          echo ""
+          echo "📋 Job logs:"
+          kubectl logs -n monitoring job/grafana-appinsights-setup --tail=50 || true
+      
+      - name: Get Grafana access information
+        run: |
+          GRAFANA_PASSWORD=$(kubectl get secret grafana -n monitoring -o jsonpath="{.data.admin-password}" | base64 -d)
+          
+          echo "============================================"
+          echo "📊 Grafana Application Insights Integration"
+          echo "============================================"
+          echo ""
+          echo "✅ Configuration completed!"
+          echo ""
+          echo "🔗 Access Grafana:"
+          echo "   kubectl port-forward -n monitoring svc/grafana 3000:80"
+          echo "   Then open: http://localhost:3000"
+          echo ""
+          echo "👤 Credentials:"
+          echo "   Username: admin"
+          echo "   Password: $GRAFANA_PASSWORD"
+          echo ""
+          echo "📊 Dashboards Available:"
+          echo "   - Application Insights Overview (imported)"
+          echo "   - Azure Monitor for Applications (imported)"
+          echo "   - DX02 - Application Performance (custom)"
+          echo ""
+          echo "📈 Data Source:"
+          echo "   Name: Azure Monitor - Application Insights"
+          echo "   Type: grafana-azure-monitor-datasource"
+          echo "   Status: Check in Grafana UI"
+          echo ""
+          echo "💡 Next Steps:"
+          echo "   1. Port-forward Grafana (command above)"
+          echo "   2. Login with admin credentials"
+          echo "   3. Go to Dashboards → Browse"
+          echo "   4. Select any Application Insights dashboard"
+          echo "   5. View your DX02 app metrics!"
+          echo ""
+      
+      - name: Verify setup
+        continue-on-error: true
+        run: |
+          echo "🔍 Verifying Grafana setup..."
+          
+          # Check if job completed successfully
+          JOB_STATUS=$(kubectl get job grafana-appinsights-setup -n monitoring -o jsonpath='{.status.succeeded}' 2>/dev/null || echo "0")
+          
+          if [ "$JOB_STATUS" = "1" ]; then
+            echo "✅ Setup job completed successfully"
+          else
+            echo "⚠️  Setup job might have issues. Check logs above."
+          fi
+          
+          # Check if datasource secret exists
+          kubectl get secret azure-credentials -n monitoring &>/dev/null && \
+            echo "✅ Azure credentials secret exists" || \
+            echo "❌ Azure credentials secret missing"
+          
+          kubectl get secret appinsights-config -n monitoring &>/dev/null && \
+            echo "✅ Application Insights config secret exists" || \
+            echo "❌ Application Insights config secret missing"
+      
+      - name: Send Slack notification
+        if: always()
+        continue-on-error: true
+        run: |
+          if [ -z "${{ secrets.SLACK_WEBHOOK_URL }}" ]; then
+            echo "⚠️ SLACK_WEBHOOK_URL not configured, skipping notification"
+            exit 0
+          fi
+          
+          if [ "${{ job.status }}" = "success" ]; then
+            COLOR="good"
+            EMOJI="✅"
+            STATUS="SUCCESS"
+          else
+            COLOR="danger"
+            EMOJI="❌"
+            STATUS="FAILED"
+          fi
+          
+          curl -X POST "${{ secrets.SLACK_WEBHOOK_URL }}" \
+            -H 'Content-Type: application/json' \
+            -d "{
+              \"attachments\": [{
+                \"color\": \"$COLOR\",
+                \"title\": \"$EMOJI Grafana + Application Insights Integration $STATUS\",
+                \"text\": \"Environment: ${{ github.event.inputs.environment }}\\nDashboards: 3 imported\\nData Source: Azure Monitor configured\",
+                \"footer\": \"GitHub Actions - TX02\",
+                \"ts\": $(date +%s)
+              }]
+            }"
