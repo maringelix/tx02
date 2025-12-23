@@ -1,4 +1,4 @@
-name: Setup ArgoCD
+name: 🚀 Setup ArgoCD
 
 on:
   workflow_dispatch:
