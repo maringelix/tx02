@@ -55,8 +55,14 @@ jobs:
             HASHED_PASSWORD=$(kubectl run bcrypt-hash --rm -i --restart=Never --image=argoproj/argocd:${{ env.ARGOCD_VERSION }} -- \
               argocd account bcrypt --password "${{ github.event.inputs.admin_password }}" 2>/dev/null | tail -n 1)
             
-            kubectl -n ${{ env.ARGOCD_NAMESPACE }} patch secret argocd-secret \
-              -p "{\"stringData\": {\"admin.password\": \"$HASHED_PASSWORD\", \"admin.passwordMtime\": \"$(date +%FT%T%Z)\"}}"
+            # Create patch file to avoid shell escaping issues
+            cat <<EOF > /tmp/argocd-secret-patch.yaml
+            stringData:
+              admin.password: "$HASHED_PASSWORD"
+              admin.passwordMtime: "$(date +%FT%T%Z)"
+            EOF
+            
+            kubectl -n ${{ env.ARGOCD_NAMESPACE }} patch secret argocd-secret --patch-file /tmp/argocd-secret-patch.yaml
           else
             echo "🔑 Using auto-generated password"
           fi
