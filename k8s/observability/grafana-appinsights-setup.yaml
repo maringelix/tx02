@@ -11,7 +11,7 @@ data:
     echo "🔧 Configuring Grafana with Application Insights..."
     
     # Grafana connection
-    GRAFANA_URL="http://grafana.monitoring.svc.cluster.local"
+    GRAFANA_URL="http://kube-prometheus-stack-grafana.monitoring.svc.cluster.local"
     GRAFANA_USER="admin"
     GRAFANA_PASSWORD="${GRAFANA_PASSWORD}"
     
@@ -270,7 +270,7 @@ spec:
         - name: GRAFANA_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: grafana
+              name: kube-prometheus-stack-grafana
               key: admin-password
         - name: AZURE_TENANT_ID
           valueFrom:
