@@ -1,0 +1,234 @@
+name: Setup ArgoCD
+
+on:
+  workflow_dispatch:
+    inputs:
+      admin_password:
+        description: 'ArgoCD admin password (leave empty for auto-generated)'
+        required: false
+        default: ''
+
+env:
+  ARGOCD_VERSION: 'v2.13.3'
+  ARGOCD_NAMESPACE: 'argocd'
+
+jobs:
+  setup-argocd:
+    name: Install and Configure ArgoCD
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group tx02-prd-rg \
+            --name tx02-prd-aks \
+            --overwrite-existing
+
+      - name: Create ArgoCD namespace
+        run: |
+          kubectl create namespace ${{ env.ARGOCD_NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Install ArgoCD
+        run: |
+          echo "📦 Installing ArgoCD ${{ env.ARGOCD_VERSION }}..."
+          kubectl apply -n ${{ env.ARGOCD_NAMESPACE }} -f https://raw.githubusercontent.com/argoproj/argo-cd/${{ env.ARGOCD_VERSION }}/manifests/install.yaml
+          
+          echo "⏳ Waiting for ArgoCD to be ready..."
+          kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n ${{ env.ARGOCD_NAMESPACE }}
+          kubectl wait --for=condition=available --timeout=300s deployment/argocd-repo-server -n ${{ env.ARGOCD_NAMESPACE }}
+          kubectl wait --for=condition=available --timeout=300s deployment/argocd-applicationset-controller -n ${{ env.ARGOCD_NAMESPACE }}
+
+      - name: Configure admin password
+        run: |
+          if [ -n "${{ github.event.inputs.admin_password }}" ]; then
+            echo "🔐 Setting custom admin password..."
+            # Hash the password using bcrypt
+            HASHED_PASSWORD=$(kubectl run bcrypt-hash --rm -i --restart=Never --image=argoproj/argocd:${{ env.ARGOCD_VERSION }} -- \
+              argocd account bcrypt --password "${{ github.event.inputs.admin_password }}" 2>/dev/null | tail -n 1)
+            
+            kubectl -n ${{ env.ARGOCD_NAMESPACE }} patch secret argocd-secret \
+              -p "{\"stringData\": {\"admin.password\": \"$HASHED_PASSWORD\", \"admin.passwordMtime\": \"$(date +%FT%T%Z)\"}}"
+          else
+            echo "🔑 Using auto-generated password"
+          fi
+
+      - name: Create LoadBalancer service for ArgoCD Server
+        run: |
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: argocd-server-external
+            namespace: ${{ env.ARGOCD_NAMESPACE }}
+            labels:
+              app.kubernetes.io/name: argocd-server
+              app.kubernetes.io/component: server
+          spec:
+            type: LoadBalancer
+            ports:
+            - name: http
+              port: 80
+              targetPort: 8080
+              protocol: TCP
+            - name: https
+              port: 443
+              targetPort: 8080
+              protocol: TCP
+            selector:
+              app.kubernetes.io/name: argocd-server
+          EOF
+          
+          echo "⏳ Waiting for LoadBalancer IP..."
+          kubectl wait --for=jsonpath='{.status.loadBalancer.ingress}' --timeout=300s service/argocd-server-external -n ${{ env.ARGOCD_NAMESPACE }}
+
+      - name: Configure GitHub repository
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🔗 Connecting ArgoCD to GitHub repository..."
+          
+          # Wait for argocd-server to be ready
+          kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n ${{ env.ARGOCD_NAMESPACE }}
+          
+          # Port-forward to access ArgoCD API
+          kubectl port-forward svc/argocd-server -n ${{ env.ARGOCD_NAMESPACE }} 8080:443 &
+          PF_PID=$!
+          sleep 10
+          
+          # Get admin password
+          if [ -n "${{ github.event.inputs.admin_password }}" ]; then
+            ADMIN_PASSWORD="${{ github.event.inputs.admin_password }}"
+          else
+            ADMIN_PASSWORD=$(kubectl -n ${{ env.ARGOCD_NAMESPACE }} get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
+          fi
+          
+          # Login to ArgoCD
+          kubectl exec -n ${{ env.ARGOCD_NAMESPACE }} deployment/argocd-server -- \
+            argocd login localhost:8080 --username admin --password "$ADMIN_PASSWORD" --insecure
+          
+          # Add repository
+          kubectl exec -n ${{ env.ARGOCD_NAMESPACE }} deployment/argocd-server -- \
+            argocd repo add https://github.com/${{ github.repository }}.git \
+            --username ${{ github.actor }} \
+            --password ${{ secrets.GITHUB_TOKEN }} \
+            --insecure
+          
+          # Kill port-forward
+          kill $PF_PID || true
+
+      - name: Create ArgoCD Applications
+        run: |
+          echo "📱 Creating ArgoCD Applications..."
+          
+          # DX02 Application
+          cat <<EOF | kubectl apply -f -
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: dx02
+            namespace: ${{ env.ARGOCD_NAMESPACE }}
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+          spec:
+            project: default
+            source:
+              repoURL: https://github.com/${{ github.repository }}.git
+              targetRevision: main
+              path: dx02/k8s
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: dx02
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+                allowEmpty: false
+              syncOptions:
+                - CreateNamespace=true
+                - PrunePropagationPolicy=foreground
+              retry:
+                limit: 5
+                backoff:
+                  duration: 5s
+                  factor: 2
+                  maxDuration: 3m
+          EOF
+
+      - name: Configure RBAC for GitHub Actions
+        run: |
+          echo "🔐 Configuring RBAC for GitHub Actions..."
+          
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: argocd-rbac-cm
+            namespace: ${{ env.ARGOCD_NAMESPACE }}
+          data:
+            policy.default: role:readonly
+            policy.csv: |
+              p, role:github-actions, applications, *, */*, allow
+              p, role:github-actions, clusters, get, *, allow
+              p, role:github-actions, repositories, get, *, allow
+              p, role:github-actions, projects, get, *, allow
+              g, github-actions, role:github-actions
+          EOF
+
+      - name: Get access information
+        run: |
+          echo "### 🎉 ArgoCD Installation Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Get LoadBalancer IP
+          ARGOCD_IP=$(kubectl get svc argocd-server-external -n ${{ env.ARGOCD_NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+          
+          # Get admin password
+          if [ -n "${{ github.event.inputs.admin_password }}" ]; then
+            ADMIN_PASSWORD="${{ github.event.inputs.admin_password }}"
+          else
+            ADMIN_PASSWORD=$(kubectl -n ${{ env.ARGOCD_NAMESPACE }} get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
+          fi
+          
+          echo "#### 📊 Access Information" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL**: http://$ARGOCD_IP" >> $GITHUB_STEP_SUMMARY
+          echo "- **Username**: admin" >> $GITHUB_STEP_SUMMARY
+          echo "- **Password**: \`$ADMIN_PASSWORD\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### 📦 Installed Components" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- ArgoCD Server" >> $GITHUB_STEP_SUMMARY
+          echo "- ArgoCD Repo Server" >> $GITHUB_STEP_SUMMARY
+          echo "- ArgoCD Application Controller" >> $GITHUB_STEP_SUMMARY
+          echo "- ArgoCD ApplicationSet Controller" >> $GITHUB_STEP_SUMMARY
+          echo "- ArgoCD Notifications Controller" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### 🚀 Applications Configured" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **dx02**: Auto-sync enabled from \`dx02/k8s\` path" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### 🔗 Quick Links" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- [ArgoCD Dashboard](http://$ARGOCD_IP)" >> $GITHUB_STEP_SUMMARY
+          echo "- [ArgoCD Documentation](https://argo-cd.readthedocs.io/)" >> $GITHUB_STEP_SUMMARY
+          
+          # Output to workflow
+          echo "ARGOCD_URL=http://$ARGOCD_IP" >> $GITHUB_OUTPUT
+          echo "ARGOCD_PASSWORD=$ADMIN_PASSWORD" >> $GITHUB_OUTPUT
+
+      - name: Verify installation
+        run: |
+          echo "✅ Verifying ArgoCD installation..."
+          kubectl get all -n ${{ env.ARGOCD_NAMESPACE }}
+          echo ""
+          echo "✅ Verifying ArgoCD Applications..."
+          kubectl get applications -n ${{ env.ARGOCD_NAMESPACE }}

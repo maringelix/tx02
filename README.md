@@ -371,6 +371,7 @@ tx02/
 ├── config.json                 # Configuração do projeto
 ├── DEPLOYMENT_GUIDE.md         # Guia de deploy
 ├── GITHUB_SECRETS.md           # Configuração de secrets
+├── ARGOCD.md                   # GitOps com ArgoCD
 ├── QUICK_REFERENCE.md          # Referência rápida
 └── README.md
 ```
@@ -656,6 +657,7 @@ Veja [TROUBLESHOOTING.md](TROUBLESHOOTING.md) para mais detalhes.
 - [BACKUP_STRATEGY.md](BACKUP_STRATEGY.md) - 🗄️ Estratégia de backup e disaster recovery
 - [LOGGING_STRATEGY.md](LOGGING_STRATEGY.md) - 📊 Logs centralizados com Azure Log Analytics
 - [APM_STRATEGY.md](APM_STRATEGY.md) - 📈 Application Performance Monitoring com Azure Application Insights
+- [ARGOCD.md](ARGOCD.md) - 🚀 GitOps com ArgoCD para continuous delivery
 
 ---
 
@@ -673,9 +675,9 @@ Veja [TROUBLESHOOTING.md](TROUBLESHOOTING.md) para mais detalhes.
 - [x] **✅ Backup Automation**: Workflows de backup e restore para SQL Database e AKS volumes
 - [x] **✅ Logs Centralizados**: Azure Log Analytics implementado com Container Insights
 - [x] **✅ APM (Application Performance Monitoring)**: Azure Application Insights configurado
+- [x] **✅ GitOps**: ArgoCD implementado para continuous delivery
 - [ ] **Blue/Green Deployment**: Implementar estratégia de deploy avançada no AKS
 - [ ] **Service Mesh**: Adicionar Istio, Linkerd ou Azure Service Mesh
-- [ ] **GitOps**: Migrar para ArgoCD ou Flux
 - [ ] **Disaster Recovery**: Expandir para multi-region com failover automático
 - [ ] **Cost Optimization**: Implementar Azure Cost Management automation e budget alerts
 - [ ] **Security Scanning - IaC**: Adicionar tfsec/checkov para Terraform, gitleaks para secrets
