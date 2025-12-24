@@ -301,10 +301,10 @@ jobs:
                   host: dx02-service
                   port:
                     number: 80
-                timeout: 30s
-                retries:
-                  attempts: 3
-                  perTryTimeout: 10s
+              timeout: 30s
+              retries:
+                attempts: 3
+                perTryTimeout: 10s
           EOF
           
           echo "✅ Gateway and VirtualService deployed"
