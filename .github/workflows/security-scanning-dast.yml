@@ -44,8 +44,8 @@ jobs:
     - name: 🔍 Get AKS credentials
       run: |
         az aks get-credentials \
-          --resource-group rg-dx02-eastus \
-          --name aks-dx02-eastus \
+          --resource-group tx02-prd-rg \
+          --name tx02-prd-aks \
           --overwrite-existing
     
     - name: 🌐 Determine target URL
