@@ -8,6 +8,19 @@ Documentação completa sobre a implementação e uso do **Azure Service Mesh** 
 
 ---
 
+## ⚠️ **Limitações do Azure Service Mesh**
+
+> 🔔 **Importante:** O Azure Service Mesh é uma implementação gerenciada do Istio com algumas limitações:
+
+- ❌ **Telemetry API** (v1alpha1) não é suportada - o Azure usa configuração built-in
+- ❌ Alguns recursos avançados do Istio podem não estar disponíveis
+- ✅ **Telemetry automática** já vem configurada com Azure Monitor e Prometheus
+- ✅ mTLS, Traffic Management e Observability básica são totalmente suportados
+
+**Documentação oficial:** [Azure AKS Istio Add-on Limitations](https://learn.microsoft.com/en-us/azure/aks/istio-about#limitations)
+
+---
+
 ## 📋 Índice
 
 - [Visão Geral](#-visão-geral)

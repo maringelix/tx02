@@ -306,31 +306,10 @@ spec:
 # 8. Configurar Telemetry
 if ($EnableTelemetry) {
     Write-Step "Configuring telemetry..."
-    try {
-        $telemetryConfig = @"
-apiVersion: telemetry.istio.io/v1alpha1
-kind: Telemetry
-metadata:
-  name: mesh-default
-  namespace: aks-istio-system
-spec:
-  tracing:
-  - providers:
-    - name: azure-monitor
-    randomSamplingPercentage: 100.0
-  metrics:
-  - providers:
-    - name: prometheus
-  accessLogging:
-  - providers:
-    - name: envoy
-"@
-        
-        $telemetryConfig | kubectl apply -f - | Out-Null
-        Write-Success "Telemetry configured"
-    } catch {
-        Write-Warning "Failed to configure telemetry: $_"
-    }
+    Write-Info "Azure Service Mesh has built-in telemetry integration"
+    Write-Info "Telemetry is automatically configured with Azure Monitor and Prometheus"
+    Write-Warning "Custom Telemetry resources (v1alpha1) are not supported by Azure Service Mesh"
+    Write-Success "Using default Azure Service Mesh telemetry (no custom config needed)"
     Write-Host ""
 }
 
