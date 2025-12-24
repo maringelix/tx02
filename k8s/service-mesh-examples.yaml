@@ -1,0 +1,325 @@
+# Service Mesh Examples for DX02
+# Apply these manifests after deploying Istio Service Mesh
+
+---
+# 1. Gateway - Entry point for external traffic
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: dx02-gateway
+  namespace: dx02
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "*"
+  - port:
+      number: 443
+      name: https
+      protocol: HTTPS
+    tls:
+      mode: SIMPLE
+      credentialName: dx02-tls-cert
+    hosts:
+    - "dx02.example.com"
+
+---
+# 2. VirtualService - Traffic routing rules
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: dx02-vs
+  namespace: dx02
+spec:
+  hosts:
+  - "*"
+  gateways:
+  - dx02-gateway
+  http:
+  - match:
+    - uri:
+        prefix: "/api"
+    route:
+    - destination:
+        host: dx02-service
+        port:
+          number: 80
+      weight: 100
+    timeout: 30s
+    retries:
+      attempts: 3
+      perTryTimeout: 10s
+      retryOn: "5xx,reset,connect-failure,refused-stream"
+  - match:
+    - uri:
+        prefix: "/"
+    route:
+    - destination:
+        host: dx02-service
+        port:
+          number: 80
+    timeout: 30s
+
+---
+# 3. DestinationRule - Load balancing and circuit breaker
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: dx02-destination
+  namespace: dx02
+spec:
+  host: dx02-service
+  trafficPolicy:
+    loadBalancer:
+      simple: ROUND_ROBIN
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        http1MaxPendingRequests: 50
+        http2MaxRequests: 100
+        maxRequestsPerConnection: 2
+    outlierDetection:
+      consecutiveErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+      minHealthPercent: 40
+  subsets:
+  - name: v1
+    labels:
+      version: v1
+  - name: v2
+    labels:
+      version: v2
+
+---
+# 4. PeerAuthentication - Enforce mTLS
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: dx02-mtls
+  namespace: dx02
+spec:
+  mtls:
+    mode: STRICT
+
+---
+# 5. AuthorizationPolicy - Allow all (example)
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: dx02-allow-all
+  namespace: dx02
+spec:
+  action: ALLOW
+  rules:
+  - {}
+
+---
+# 6. ServiceEntry - External service access (optional)
+apiVersion: networking.istio.io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: external-api
+  namespace: dx02
+spec:
+  hosts:
+  - api.external.com
+  ports:
+  - number: 443
+    name: https
+    protocol: HTTPS
+  location: MESH_EXTERNAL
+  resolution: DNS
+
+---
+# ADVANCED EXAMPLES
+
+---
+# Canary Deployment - 90% v1, 10% v2
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: dx02-canary
+  namespace: dx02
+spec:
+  hosts:
+  - dx02-service
+  http:
+  - match:
+    - headers:
+        x-version:
+          exact: "v2"
+    route:
+    - destination:
+        host: dx02-service
+        subset: v2
+      weight: 100
+  - route:
+    - destination:
+        host: dx02-service
+        subset: v1
+      weight: 90
+    - destination:
+        host: dx02-service
+        subset: v2
+      weight: 10
+
+---
+# Traffic Mirroring - Mirror traffic to v2 for testing
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: dx02-mirror
+  namespace: dx02
+spec:
+  hosts:
+  - dx02-service
+  http:
+  - route:
+    - destination:
+        host: dx02-service
+        subset: v1
+      weight: 100
+    mirror:
+      host: dx02-service
+      subset: v2
+    mirrorPercentage:
+      value: 100.0
+
+---
+# Fault Injection - Testing resilience
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: dx02-fault-injection
+  namespace: dx02
+spec:
+  hosts:
+  - dx02-service
+  http:
+  - fault:
+      delay:
+        percentage:
+          value: 10.0
+        fixedDelay: 5s
+      abort:
+        percentage:
+          value: 5.0
+        httpStatus: 503
+    route:
+    - destination:
+        host: dx02-service
+
+---
+# Request Authentication - JWT validation
+apiVersion: security.istio.io/v1beta1
+kind: RequestAuthentication
+metadata:
+  name: dx02-jwt-auth
+  namespace: dx02
+spec:
+  selector:
+    matchLabels:
+      app: dx02
+  jwtRules:
+  - issuer: "https://login.microsoftonline.com/<tenant-id>/v2.0"
+    jwksUri: "https://login.microsoftonline.com/<tenant-id>/discovery/v2.0/keys"
+    audiences:
+    - "api://dx02"
+
+---
+# Authorization Policy - Deny all by default
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all
+  namespace: dx02
+spec:
+  {}
+
+---
+# Authorization Policy - Allow specific paths
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-frontend
+  namespace: dx02
+spec:
+  selector:
+    matchLabels:
+      app: dx02-backend
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals: ["cluster.local/ns/dx02/sa/dx02-frontend"]
+    to:
+    - operation:
+        methods: ["GET", "POST"]
+        paths: ["/api/*"]
+
+---
+# Telemetry - Custom metrics and tracing
+apiVersion: telemetry.istio.io/v1alpha1
+kind: Telemetry
+metadata:
+  name: dx02-telemetry
+  namespace: dx02
+spec:
+  metrics:
+  - providers:
+    - name: prometheus
+    dimensions:
+      request_host: request.host
+      destination_port: destination.port
+  tracing:
+  - providers:
+    - name: azure-monitor
+    randomSamplingPercentage: 100.0
+  accessLogging:
+  - providers:
+    - name: envoy
+    disabled: false
+
+---
+# Retry Policy - Advanced retries
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: dx02-retry-policy
+  namespace: dx02
+spec:
+  hosts:
+  - dx02-service
+  http:
+  - route:
+    - destination:
+        host: dx02-service
+    retries:
+      attempts: 5
+      perTryTimeout: 5s
+      retryOn: "5xx,reset,connect-failure,refused-stream,retriable-4xx"
+      retryRemoteLocalities: true
+
+---
+# Timeout Policy
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: dx02-timeout
+  namespace: dx02
+spec:
+  hosts:
+  - dx02-service
+  http:
+  - route:
+    - destination:
+        host: dx02-service
+    timeout: 60s

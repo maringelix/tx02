@@ -139,6 +139,14 @@ O free tier oferece um botão "Apply offer" que não pode ser automatizado via T
   - Require labels para rastreabilidade
 - ✅ **SonarCloud** - Code quality e security analysis
 - ✅ **GitHub Security** - Dependabot e code scanning habilitados
+- ✅ **Service Mesh (Istio)** - mTLS automático para comunicação service-to-service
+
+### 🕸️ **Service Mesh**
+- ✅ **Istio** - Azure Service Mesh integrado ao AKS
+- ✅ **mTLS Strict** - Criptografia automática entre serviços
+- ✅ **Traffic Management** - Canary, circuit breakers, retries
+- ✅ **Ingress Gateway** - LoadBalancer com roteamento avançado
+- ✅ **Telemetry** - Métricas e tracing integrados com Prometheus/Azure Monitor
 
 ### 🎯 **Desafios Superados**
 - ✅ PostgreSQL → Azure SQL Database migration (Free Trial restriction)
@@ -148,6 +156,7 @@ O free tier oferece um botão "Apply offer" que não pode ser automatizado via T
 - ✅ SQL free tier "Apply offer" workaround
 - ✅ ACR integration com AKS (AcrPull role automatic)
 - ✅ Observability stack completa (Prometheus + Grafana + Alertmanager)
+- ✅ Service Mesh implementation com Istio add-on do AKS
 
 ### 📚 **Documentação Completa**
 - 📖 [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) - Guia passo-a-passo com screenshots
@@ -164,6 +173,8 @@ O free tier oferece um botão "Apply offer" que não pode ser automatizado via T
 - 🔒 **Segurança:**
   - [SECURITY_SCANNING.md](SECURITY_SCANNING.md) - Trivy e OPA Gatekeeper
   - [k8s/policies/README.md](k8s/policies/README.md) - Políticas do Gatekeeper
+- 🕸️ **Service Mesh:**
+  - [SERVICE_MESH.md](SERVICE_MESH.md) - Azure Service Mesh (Istio) com mTLS e traffic management
 
 > 💡 **Novo!** Leia [AZURE_FREE_TRIAL_LESSONS_LEARNED.md](AZURE_FREE_TRIAL_LESSONS_LEARNED.md) para entender todas as limitações do Azure Free Trial, soluções implementadas, e a jornada completa de troubleshooting!
 
@@ -658,6 +669,7 @@ Veja [TROUBLESHOOTING.md](TROUBLESHOOTING.md) para mais detalhes.
 - [LOGGING_STRATEGY.md](LOGGING_STRATEGY.md) - 📊 Logs centralizados com Azure Log Analytics
 - [APM_STRATEGY.md](APM_STRATEGY.md) - 📈 Application Performance Monitoring com Azure Application Insights
 - [ARGOCD.md](ARGOCD.md) - 🚀 GitOps com ArgoCD para continuous delivery
+- [SERVICE_MESH.md](SERVICE_MESH.md) - 🕸️ Azure Service Mesh (Istio) para traffic management e segurança
 - [SECURITY_SCANNING_IAC_DAST.md](SECURITY_SCANNING_IAC_DAST.md) - 🔒 Security scanning IaC (tfsec/Checkov/Gitleaks) e DAST (OWASP ZAP)
 
 ---
@@ -677,8 +689,8 @@ Veja [TROUBLESHOOTING.md](TROUBLESHOOTING.md) para mais detalhes.
 - [x] **✅ Logs Centralizados**: Azure Log Analytics implementado com Container Insights
 - [x] **✅ APM (Application Performance Monitoring)**: Azure Application Insights configurado
 - [x] **✅ GitOps**: ArgoCD implementado para continuous delivery
+- [x] **✅ Service Mesh**: Azure Service Mesh (Istio) implementado com mTLS, telemetry e ingress gateway
 - [ ] **Blue/Green Deployment**: Implementar estratégia de deploy avançada no AKS
-- [ ] **Service Mesh**: Adicionar Istio, Linkerd ou Azure Service Mesh
 - [ ] **Disaster Recovery**: Expandir para multi-region com failover automático
 - [ ] **Cost Optimization**: Implementar Azure Cost Management automation e budget alerts
 - [x] **✅ Security Scanning - IaC**: tfsec/Checkov para Terraform, Gitleaks para secrets

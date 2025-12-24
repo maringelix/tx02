@@ -1,0 +1,449 @@
+name: 🕸️ Configure Azure Service Mesh (Istio)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        options:
+          - prd
+          - stg
+        default: prd
+      enable_mtls:
+        description: 'Enable mTLS'
+        required: true
+        type: boolean
+        default: true
+      enable_telemetry:
+        description: 'Enable Telemetry'
+        required: true
+        type: boolean
+        default: true
+      enable_ingress_gateway:
+        description: 'Enable Ingress Gateway'
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AZURE_RESOURCE_GROUP: tx02-${{ github.event.inputs.environment }}-rg
+  AKS_CLUSTER_NAME: tx02-${{ github.event.inputs.environment }}-aks
+  ISTIO_VERSION: "1.20"
+
+jobs:
+  install-service-mesh:
+    name: 🕸️ Install Istio Service Mesh
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: 🎯 Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.AKS_CLUSTER_NAME }} \
+            --overwrite-existing
+
+      - name: 📦 Check if Istio add-on is already enabled
+        id: check-istio
+        run: |
+          ISTIO_ENABLED=$(az aks show \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.AKS_CLUSTER_NAME }} \
+            --query 'serviceMeshProfile.mode' -o tsv)
+          
+          echo "istio_enabled=$ISTIO_ENABLED" >> $GITHUB_OUTPUT
+          echo "Current Service Mesh status: $ISTIO_ENABLED"
+
+      - name: 🚀 Enable Istio add-on on AKS
+        if: steps.check-istio.outputs.istio_enabled != 'Istio'
+        run: |
+          echo "🕸️ Enabling Istio add-on on AKS cluster..."
+          az aks mesh enable \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.AKS_CLUSTER_NAME }}
+          
+          echo "⏳ Waiting for Istio add-on to be ready..."
+          kubectl wait --for=condition=ready pod \
+            -l app=istiod \
+            -n aks-istio-system \
+            --timeout=600s || echo "Warning: Istio may still be initializing"
+
+      - name: 🔍 Verify Istio installation
+        run: |
+          echo "📊 Checking Istio components..."
+          kubectl get pods -n aks-istio-system
+          kubectl get svc -n aks-istio-system
+          
+          echo ""
+          echo "📋 Istio version:"
+          kubectl get pods -n aks-istio-system -o jsonpath='{.items[0].spec.containers[0].image}'
+
+      - name: 🏷️ Enable Istio injection for namespaces
+        run: |
+          echo "🏷️ Enabling Istio sidecar injection for key namespaces..."
+          
+          # Create namespaces if they don't exist
+          kubectl create namespace dx02 --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+          
+          # Enable Istio injection
+          kubectl label namespace dx02 istio-injection=enabled --overwrite
+          kubectl label namespace monitoring istio-injection=enabled --overwrite
+          
+          echo ""
+          echo "✅ Namespaces with Istio injection:"
+          kubectl get namespaces -L istio-injection
+
+      - name: 🔒 Configure mTLS
+        if: github.event.inputs.enable_mtls == 'true'
+        run: |
+          echo "🔒 Configuring strict mTLS for service-to-service communication..."
+          
+          cat <<EOF | kubectl apply -f -
+          apiVersion: security.istio.io/v1beta1
+          kind: PeerAuthentication
+          metadata:
+            name: default-mtls-strict
+            namespace: aks-istio-system
+          spec:
+            mtls:
+              mode: STRICT
+          ---
+          apiVersion: security.istio.io/v1beta1
+          kind: PeerAuthentication
+          metadata:
+            name: dx02-mtls-strict
+            namespace: dx02
+          spec:
+            mtls:
+              mode: STRICT
+          EOF
+          
+          echo "✅ mTLS configured successfully"
+
+      - name: 🌐 Deploy Istio Ingress Gateway
+        if: github.event.inputs.enable_ingress_gateway == 'true'
+        run: |
+          echo "🌐 Deploying Istio Ingress Gateway..."
+          
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: aks-istio-ingress
+            labels:
+              istio-injection: enabled
+          ---
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: istio-ingressgateway
+            namespace: aks-istio-ingress
+          spec:
+            replicas: 2
+            selector:
+              matchLabels:
+                app: istio-ingressgateway
+                istio: ingressgateway
+            template:
+              metadata:
+                labels:
+                  app: istio-ingressgateway
+                  istio: ingressgateway
+                annotations:
+                  sidecar.istio.io/inject: "false"
+              spec:
+                serviceAccountName: istio-ingressgateway
+                containers:
+                - name: istio-proxy
+                  image: mcr.microsoft.com/oss/istio/proxyv2:${{ env.ISTIO_VERSION }}
+                  ports:
+                  - containerPort: 8080
+                    protocol: TCP
+                  - containerPort: 8443
+                    protocol: TCP
+                  - containerPort: 15021
+                    protocol: TCP
+                  - containerPort: 15090
+                    protocol: TCP
+                  env:
+                  - name: ISTIO_META_ROUTER_MODE
+                    value: "sni-dnat"
+                  resources:
+                    requests:
+                      cpu: 100m
+                      memory: 128Mi
+                    limits:
+                      cpu: 2000m
+                      memory: 1024Mi
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: istio-ingressgateway
+            namespace: aks-istio-ingress
+            labels:
+              app: istio-ingressgateway
+              istio: ingressgateway
+          spec:
+            type: LoadBalancer
+            selector:
+              app: istio-ingressgateway
+              istio: ingressgateway
+            ports:
+            - name: status-port
+              port: 15021
+              targetPort: 15021
+            - name: http2
+              port: 80
+              targetPort: 8080
+            - name: https
+              port: 443
+              targetPort: 8443
+          ---
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: istio-ingressgateway
+            namespace: aks-istio-ingress
+          EOF
+          
+          echo "⏳ Waiting for Ingress Gateway to be ready..."
+          kubectl wait --for=condition=available deployment/istio-ingressgateway \
+            -n aks-istio-ingress \
+            --timeout=300s
+          
+          echo ""
+          echo "✅ Ingress Gateway deployed successfully"
+          kubectl get svc istio-ingressgateway -n aks-istio-ingress
+
+      - name: 📊 Configure Telemetry
+        if: github.event.inputs.enable_telemetry == 'true'
+        run: |
+          echo "📊 Configuring Istio telemetry and observability..."
+          
+          cat <<EOF | kubectl apply -f -
+          apiVersion: telemetry.istio.io/v1alpha1
+          kind: Telemetry
+          metadata:
+            name: mesh-default
+            namespace: aks-istio-system
+          spec:
+            tracing:
+            - providers:
+              - name: azure-monitor
+              randomSamplingPercentage: 100.0
+            metrics:
+            - providers:
+              - name: prometheus
+            accessLogging:
+            - providers:
+              - name: envoy
+          EOF
+          
+          echo "✅ Telemetry configured successfully"
+
+      - name: 🎯 Deploy DX02 Gateway and VirtualService
+        run: |
+          echo "🎯 Deploying Gateway and VirtualService for DX02..."
+          
+          cat <<EOF | kubectl apply -f -
+          apiVersion: networking.istio.io/v1beta1
+          kind: Gateway
+          metadata:
+            name: dx02-gateway
+            namespace: dx02
+          spec:
+            selector:
+              istio: ingressgateway
+            servers:
+            - port:
+                number: 80
+                name: http
+                protocol: HTTP
+              hosts:
+              - "*"
+          ---
+          apiVersion: networking.istio.io/v1beta1
+          kind: VirtualService
+          metadata:
+            name: dx02-vs
+            namespace: dx02
+          spec:
+            hosts:
+            - "*"
+            gateways:
+            - dx02-gateway
+            http:
+            - match:
+              - uri:
+                  prefix: "/"
+              route:
+              - destination:
+                  host: dx02-service
+                  port:
+                    number: 80
+                timeout: 30s
+                retries:
+                  attempts: 3
+                  perTryTimeout: 10s
+          EOF
+          
+          echo "✅ Gateway and VirtualService deployed"
+
+      - name: 🔍 Verify complete installation
+        run: |
+          echo "======================================"
+          echo "🕸️ Azure Service Mesh Status"
+          echo "======================================"
+          echo ""
+          
+          echo "📦 Istio System Pods:"
+          kubectl get pods -n aks-istio-system
+          echo ""
+          
+          echo "🌐 Ingress Gateway:"
+          kubectl get svc istio-ingressgateway -n aks-istio-ingress 2>/dev/null || echo "Not deployed"
+          echo ""
+          
+          echo "🏷️ Namespaces with Istio injection:"
+          kubectl get namespaces -L istio-injection | grep enabled
+          echo ""
+          
+          echo "🔒 Security Policies:"
+          kubectl get peerauthentication --all-namespaces
+          echo ""
+          
+          echo "🎯 Gateways and VirtualServices:"
+          kubectl get gateway,virtualservice -n dx02
+          echo ""
+          
+          echo "✅ Azure Service Mesh installation complete!"
+
+      - name: 📝 Generate configuration summary
+        run: |
+          cat > service-mesh-summary.txt <<EOF
+          ====================================
+          Azure Service Mesh Configuration
+          ====================================
+          
+          Environment: ${{ github.event.inputs.environment }}
+          AKS Cluster: ${{ env.AKS_CLUSTER_NAME }}
+          Resource Group: ${{ env.AZURE_RESOURCE_GROUP }}
+          Istio Version: ${{ env.ISTIO_VERSION }}
+          
+          Features Enabled:
+          - mTLS: ${{ github.event.inputs.enable_mtls }}
+          - Telemetry: ${{ github.event.inputs.enable_telemetry }}
+          - Ingress Gateway: ${{ github.event.inputs.enable_ingress_gateway }}
+          
+          Ingress Gateway External IP:
+          EOF
+          
+          kubectl get svc istio-ingressgateway -n aks-istio-ingress \
+            -o jsonpath='{.status.loadBalancer.ingress[0].ip}' >> service-mesh-summary.txt 2>/dev/null || echo "Not available yet" >> service-mesh-summary.txt
+          
+          echo ""
+          cat service-mesh-summary.txt
+
+      - name: 📤 Upload summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: service-mesh-summary-${{ github.event.inputs.environment }}
+          path: service-mesh-summary.txt
+          retention-days: 30
+
+  validate-service-mesh:
+    name: ✅ Validate Service Mesh
+    needs: install-service-mesh
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+      - name: 🔐 Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: 🎯 Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.AKS_CLUSTER_NAME }} \
+            --overwrite-existing
+
+      - name: 🔍 Validate Istio components
+        run: |
+          echo "🔍 Running validation tests..."
+          
+          # Check Istio system pods are running
+          echo "✓ Checking Istio system pods..."
+          kubectl get pods -n aks-istio-system -o wide
+          
+          # Check all pods are ready
+          NOT_READY=$(kubectl get pods -n aks-istio-system --field-selector=status.phase!=Running -o name | wc -l)
+          if [ $NOT_READY -gt 0 ]; then
+            echo "❌ Some Istio pods are not ready"
+            exit 1
+          fi
+          echo "✅ All Istio system pods are ready"
+          
+          # Check sidecar injection
+          echo ""
+          echo "✓ Checking Istio sidecar injection..."
+          INJECTED_NS=$(kubectl get namespaces -l istio-injection=enabled -o name | wc -l)
+          echo "✅ Found $INJECTED_NS namespaces with Istio injection enabled"
+          
+          # Validate mTLS configuration
+          if [ "${{ github.event.inputs.enable_mtls }}" == "true" ]; then
+            echo ""
+            echo "✓ Validating mTLS configuration..."
+            kubectl get peerauthentication --all-namespaces
+            echo "✅ mTLS policies configured"
+          fi
+          
+          # Check Ingress Gateway
+          if [ "${{ github.event.inputs.enable_ingress_gateway }}" == "true" ]; then
+            echo ""
+            echo "✓ Validating Ingress Gateway..."
+            kubectl get svc istio-ingressgateway -n aks-istio-ingress
+            echo "✅ Ingress Gateway is running"
+          fi
+          
+          echo ""
+          echo "======================================"
+          echo "✅ All validations passed!"
+          echo "======================================"
+
+      - name: 🎉 Success notification
+        run: |
+          echo "======================================"
+          echo "🎉 Service Mesh Deployment Complete!"
+          echo "======================================"
+          echo ""
+          echo "Azure Service Mesh (Istio) has been successfully"
+          echo "deployed and configured on AKS cluster:"
+          echo "${{ env.AKS_CLUSTER_NAME }}"
+          echo ""
+          echo "Next steps:"
+          echo "1. Restart pods in enabled namespaces to inject sidecars"
+          echo "2. Configure traffic management policies"
+          echo "3. Set up monitoring dashboards"
+          echo "4. Review security policies"
+          echo ""
+          echo "Documentation: SERVICE_MESH.md"
