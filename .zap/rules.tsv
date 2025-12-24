@@ -1,0 +1,20 @@
+# ZAP Scanning Rules
+# Format: rule_id	action	description
+# Actions: FAIL, WARN, INFO, IGNORE
+
+# High/Critical - Fail the build
+10098	FAIL	Cross-Domain Misconfiguration
+40012	FAIL	Cross Site Scripting (Reflected)
+40014	FAIL	Cross Site Scripting (Persistent)
+40018	FAIL	SQL Injection
+90019	FAIL	Server Side Code Injection
+
+# Medium - Warning only
+10038	WARN	Content Security Policy (CSP) Header Not Set
+10063	WARN	Permissions Policy Header Not Set
+10055	WARN	X-Content-Type-Options Header Missing
+90004	WARN	Insufficient Site Isolation Against Spectre Vulnerability
+
+# Low/Info - Informational
+10015	INFO	Re-examine Cache-control Directives
+10021	INFO	X-Content-Type-Options Header Missing
