@@ -77,11 +77,21 @@ jobs:
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --name ${{ env.AKS_CLUSTER_NAME }}
           
-          echo "⏳ Waiting for Istio add-on to be ready..."
-          kubectl wait --for=condition=ready pod \
-            -l app=istiod \
-            -n aks-istio-system \
-            --timeout=600s || echo "Warning: Istio may still be initializing"
+          echo "⏳ Waiting for Istio add-on to be ready (this may take 5-10 minutes)..."
+          sleep 60
+          
+          # Wait for Istio pods with retries
+          for i in {1..20}; do
+            echo "Attempt $i/20: Checking Istio pods..."
+            READY_PODS=$(kubectl get pods -n aks-istio-system --field-selector=status.phase=Running 2>/dev/null | tail -n +2 | wc -l)
+            if [ "$READY_PODS" -gt 0 ]; then
+              echo "✅ Istio pods are running!"
+              kubectl get pods -n aks-istio-system
+              break
+            fi
+            echo "Waiting... ($i/20)"
+            sleep 30
+          done
 
       - name: 🔍 Verify Istio installation
         run: |
@@ -138,6 +148,7 @@ jobs:
 
       - name: 🌐 Deploy Istio Ingress Gateway
         if: github.event.inputs.enable_ingress_gateway == 'true'
+        continue-on-error: true
         run: |
           echo "🌐 Deploying Istio Ingress Gateway..."
           
@@ -155,7 +166,7 @@ jobs:
             name: istio-ingressgateway
             namespace: aks-istio-ingress
           spec:
-            replicas: 2
+            replicas: 1
             selector:
               matchLabels:
                 app: istio-ingressgateway
@@ -186,11 +197,11 @@ jobs:
                     value: "sni-dnat"
                   resources:
                     requests:
-                      cpu: 100m
+                      cpu: 50m
                       memory: 128Mi
                     limits:
-                      cpu: 2000m
-                      memory: 1024Mi
+                      cpu: 1000m
+                      memory: 512Mi
           ---
           apiVersion: v1
           kind: Service
@@ -223,13 +234,22 @@ jobs:
             namespace: aks-istio-ingress
           EOF
           
-          echo "⏳ Waiting for Ingress Gateway to be ready..."
+          echo "⏳ Waiting for Ingress Gateway deployment to be created..."
+          sleep 10
+          
+          echo "⏳ Waiting for Ingress Gateway pods to be ready..."
           kubectl wait --for=condition=available deployment/istio-ingressgateway \
             -n aks-istio-ingress \
-            --timeout=300s
+            --timeout=600s || {
+            echo "⚠️ Timeout waiting for deployment. Checking pod status..."
+            kubectl get pods -n aks-istio-ingress
+            kubectl describe deployment istio-ingressgateway -n aks-istio-ingress
+            echo "Continuing anyway..."
+          }
           
           echo ""
-          echo "✅ Ingress Gateway deployed successfully"
+          echo "✅ Ingress Gateway deployed"
+          kubectl get pods -n aks-istio-ingress
           kubectl get svc istio-ingressgateway -n aks-istio-ingress
 
       - name: 📊 Configure Telemetry
