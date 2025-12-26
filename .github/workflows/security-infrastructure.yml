@@ -20,6 +20,10 @@ on:
         description: 'Email for Let''s Encrypt notifications'
         required: true
         default: 'admin@example.com'
+      domain_name:
+        description: 'Domain name for HTTPS certificate (e.g., dx02.no-ip.org)'
+        required: true
+        default: 'dx02.example.com'
       use_letsencrypt_prod:
         description: 'Use Let''s Encrypt Production (false = staging)'
         required: true
@@ -165,11 +169,11 @@ jobs:
               name: $ISSUER_NAME
               kind: ClusterIssuer
             dnsNames:
-            - dx02.example.com
-            - "*.dx02.example.com"
+            - ${{ github.event.inputs.domain_name }}
           EOF
           
-          echo "✅ Certificate created (will be issued when DNS is configured)"
+          echo "✅ Certificate created for domain: ${{ github.event.inputs.domain_name }}"
+          echo "⚠️  Make sure DNS points to: 48.194.53.219"
 
       - name: 📊 Verify cert-manager installation
         run: |
@@ -248,20 +252,32 @@ jobs:
             echo "✅ Subnet created"
           fi
 
-      - name: 🌐 Create Public IP for Application Gateway
-        if: steps.check-appgw.outputs.exists == 'false'
+      - name: 🌐 Get existing Public IP from AKS
+        id: get-ip
         run: |
-          echo "🌐 Creating Public IP..."
+          echo "🔍 Locating existing AKS Public IP..."
           
-          az network public-ip create \
+          # Get the Public IP used by AKS Load Balancer
+          AKS_IP_ID=$(az aks show \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --name ${{ env.APP_GATEWAY_NAME }}-pip \
-            --location ${{ env.LOCATION }} \
-            --allocation-method Static \
-            --sku Standard \
-            --tags Environment=${{ github.event.inputs.environment }} ManagedBy=GitHub-Actions
+            --name ${{ env.AKS_CLUSTER_NAME }} \
+            --query "networkProfile.loadBalancerProfile.effectiveOutboundIPs[0].id" -o tsv)
           
-          echo "✅ Public IP created"
+          # Get IP details
+          IP_ADDRESS=$(az network public-ip show --ids $AKS_IP_ID --query ipAddress -o tsv)
+          IP_NAME=$(az network public-ip show --ids $AKS_IP_ID --query name -o tsv)
+          IP_RG=$(az network public-ip show --ids $AKS_IP_ID --query resourceGroup -o tsv)
+          
+          echo "ip_address=$IP_ADDRESS" >> $GITHUB_OUTPUT
+          echo "ip_name=$IP_NAME" >> $GITHUB_OUTPUT
+          echo "ip_resource_group=$IP_RG" >> $GITHUB_OUTPUT
+          
+          echo "✅ Found existing Public IP:"
+          echo "   Name: $IP_NAME"
+          echo "   IP: $IP_ADDRESS"
+          echo "   Resource Group: $IP_RG"
+          echo ""
+          echo "⚠️  Configure your DNS to point to: $IP_ADDRESS"
 
       - name: 🛡️ Create Application Gateway with WAF
         if: steps.check-appgw.outputs.exists == 'false'
@@ -277,10 +293,26 @@ jobs:
             --name ${{ env.APP_GATEWAY_SUBNET }} \
             --query id -o tsv)
           
-          # Get public IP ID
+          # Use existing Public IP from AKS
+          echo "🔗 Using existing Public IP from previous step"
+          PUBLIC_IP_NAME="${{ steps.get-ip.outputs.ip_name }}"
+          PUBLIC_IP_RG="${{ steps.get-ip.outputs.ip_resource_group }}"
+          
+          # Move Public IP to Application Gateway resource group (if different)
+          if [ "$PUBLIC_IP_RG" != "${{ env.AZURE_RESOURCE_GROUP }}" ]; then
+            echo "📦 Moving Public IP to Application Gateway resource group..."
+            az resource move \
+              --destination-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --ids $(az network public-ip show \
+                --name $PUBLIC_IP_NAME \
+                --resource-group $PUBLIC_IP_RG \
+                --query id -o tsv) || echo "⚠️ Could not move IP, will use from original RG"
+            PUBLIC_IP_RG="${{ env.AZURE_RESOURCE_GROUP }}"
+          fi
+          
           PUBLIC_IP_ID=$(az network public-ip show \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --name ${{ env.APP_GATEWAY_NAME }}-pip \
+            --resource-group $PUBLIC_IP_RG \
+            --name $PUBLIC_IP_NAME \
             --query id -o tsv)
           
           # Create Application Gateway
@@ -364,12 +396,11 @@ jobs:
             -o table
           echo ""
           
-          echo "🌐 Public IP:"
-          APPGW_IP=$(az network public-ip show \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --name ${{ env.APP_GATEWAY_NAME }}-pip \
-            --query ipAddress -o tsv)
-          echo "IP Address: $APPGW_IP"
+          echo "🌐 Public IP (reused from AKS):"
+          echo "IP Address: ${{ steps.get-ip.outputs.ip_address }}"
+          echo ""
+          echo "⚠️  IMPORTANT: Configure your DNS to point to this IP!"
+          echo "   Example (no-ip.com): dx02.no-ip.org → ${{ steps.get-ip.outputs.ip_address }}"
           echo ""
           
           echo "🛡️ WAF Policy:"
@@ -413,6 +444,7 @@ jobs:
           ISSUER_NAME="${{ github.event.inputs.use_letsencrypt_prod == 'true' && 'letsencrypt-prod' || 'letsencrypt-staging' }}"
           
           echo "🔗 Updating DX02 Ingress with HTTPS support..."
+          echo "Domain: ${{ github.event.inputs.domain_name }}"
           
           cat <<EOF | kubectl apply -f -
           apiVersion: networking.k8s.io/v1
@@ -430,10 +462,10 @@ jobs:
             ingressClassName: nginx
             tls:
             - hosts:
-              - dx02.example.com
+              - ${{ github.event.inputs.domain_name }}
               secretName: dx02-tls-secret
             rules:
-            - host: dx02.example.com
+            - host: ${{ github.event.inputs.domain_name }}
               http:
                 paths:
                 - path: /
@@ -445,7 +477,7 @@ jobs:
                         number: 80
           EOF
           
-          echo "✅ Ingress updated with HTTPS"
+          echo "✅ Ingress updated with HTTPS for domain: ${{ github.event.inputs.domain_name }}"
 
       - name: 📊 Display final summary
         run: |
@@ -456,8 +488,10 @@ jobs:
           
           if [[ "${{ github.event.inputs.install_cert_manager }}" == "true" ]]; then
             echo "📜 cert-manager: ✅ Installed"
-            echo "   ClusterIssuer: ${{ github.event.inputs.use_letsencrypt_prod == 'true' && 'letsencrypt-prod' || 'letsencrypt-staging' }}"
+            ISSUER_NAME="${{ github.event.inputs.use_letsencrypt_prod == 'true' && 'letsencrypt-prod' || 'letsencrypt-staging' }}"
+            echo "   ClusterIssuer: $ISSUER_NAME"
             echo "   Email: ${{ github.event.inputs.letsencrypt_email }}"
+            echo "   Domain: ${{ github.event.inputs.domain_name }}"
           fi
           
           if [[ "${{ github.event.inputs.deploy_app_gateway }}" == "true" ]]; then
@@ -465,19 +499,19 @@ jobs:
             echo "🛡️ Application Gateway: ✅ Deployed"
             echo "   SKU: ${{ github.event.inputs.app_gateway_sku }}"
             echo "   WAF Mode: ${{ github.event.inputs.waf_mode }}"
-            
-            APPGW_IP=$(az network public-ip show \
-              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-              --name ${{ env.APP_GATEWAY_NAME }}-pip \
-              --query ipAddress -o tsv 2>/dev/null || echo "N/A")
-            echo "   Public IP: $APPGW_IP"
+            echo "   Public IP: 48.194.53.219 (reused from AKS)"
           fi
           
           echo ""
-          echo "📝 Next Steps:"
-          echo "   1. Configure DNS to point to Application Gateway IP"
-          echo "   2. Update Ingress host to your domain"
-          echo "   3. Wait for Let's Encrypt certificate to be issued"
-          echo "   4. Test HTTPS access"
+          echo "======================================"
+          echo "📝 IMPORTANT - Configure DNS NOW:"
+          echo "======================================"
+          echo ""
+          echo "1️⃣ Go to no-ip.com"
+          echo "2️⃣ Create/Update hostname: ${{ github.event.inputs.domain_name }}"
+          echo "3️⃣ Point to IP: 48.194.53.219"
+          echo ""
+          echo "4️⃣ Wait 5-10 minutes for cert-manager to issue certificate"
+          echo "5️⃣ Access: https://${{ github.event.inputs.domain_name }}"
           echo ""
           echo "✅ Deployment complete!"
