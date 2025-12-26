@@ -260,27 +260,50 @@ jobs:
             echo "✅ Subnet created"
           fi
 
-      - name: 🌐 Get existing Public IP from AKS
+      - name: 🌐 Get or Create Public IP for Application Gateway
         id: get-ip
         run: |
-          echo "🔍 Locating existing AKS Public IP..."
+          echo "🔍 Getting Public IP for Application Gateway..."
           
-          # Get the Public IP used by AKS Load Balancer
-          AKS_IP_ID=$(az aks show \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --name ${{ env.AKS_CLUSTER_NAME }} \
-            --query "networkProfile.loadBalancerProfile.effectiveOutboundIPs[0].id" -o tsv)
+          # Try to get IP from Nginx Ingress Controller
+          INGRESS_IP=$(kubectl get svc -n ingress-nginx ingress-nginx-controller \
+            -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
           
-          # Get IP details
-          IP_ADDRESS=$(az network public-ip show --ids $AKS_IP_ID --query ipAddress -o tsv)
-          IP_NAME=$(az network public-ip show --ids $AKS_IP_ID --query name -o tsv)
-          IP_RG=$(az network public-ip show --ids $AKS_IP_ID --query resourceGroup -o tsv)
+          if [ -z "$INGRESS_IP" ]; then
+            echo "⚠️  No Nginx Ingress IP found, will create new Public IP"
+            
+            # Create new Public IP for Application Gateway
+            az network public-ip create \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --name ${{ env.APP_GATEWAY_NAME }}-pip \
+              --location ${{ env.LOCATION }} \
+              --allocation-method Static \
+              --sku Standard \
+              --tags Environment=${{ github.event.inputs.environment }} ManagedBy=GitHub-Actions
+            
+            IP_ADDRESS=$(az network public-ip show \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --name ${{ env.APP_GATEWAY_NAME }}-pip \
+              --query ipAddress -o tsv)
+            IP_NAME="${{ env.APP_GATEWAY_NAME }}-pip"
+            IP_RG="${{ env.AZURE_RESOURCE_GROUP }}"
+          else
+            echo "✅ Found Nginx Ingress IP: $INGRESS_IP"
+            
+            # Find the Public IP resource in Azure
+            IP_RESOURCES=$(az network public-ip list \
+              --query "[?ipAddress=='$INGRESS_IP'].{name:name,rg:resourceGroup}" -o json)
+            
+            IP_NAME=$(echo $IP_RESOURCES | jq -r '.[0].name')
+            IP_RG=$(echo $IP_RESOURCES | jq -r '.[0].rg')
+            IP_ADDRESS=$INGRESS_IP
+          fi
           
           echo "ip_address=$IP_ADDRESS" >> $GITHUB_OUTPUT
           echo "ip_name=$IP_NAME" >> $GITHUB_OUTPUT
           echo "ip_resource_group=$IP_RG" >> $GITHUB_OUTPUT
           
-          echo "✅ Found existing Public IP:"
+          echo "✅ Public IP configured:"
           echo "   Name: $IP_NAME"
           echo "   IP: $IP_ADDRESS"
           echo "   Resource Group: $IP_RG"
@@ -323,23 +346,12 @@ jobs:
             --name ${{ env.APP_GATEWAY_SUBNET }} \
             --query id -o tsv)
           
-          # Use existing Public IP from AKS
-          echo "🔗 Using existing Public IP from previous step"
+          # Use Public IP from previous step
+          echo "🔗 Using Public IP: ${{ steps.get-ip.outputs.ip_address }}"
           PUBLIC_IP_NAME="${{ steps.get-ip.outputs.ip_name }}"
           PUBLIC_IP_RG="${{ steps.get-ip.outputs.ip_resource_group }}"
           
-          # Move Public IP to Application Gateway resource group (if different)
-          if [ "$PUBLIC_IP_RG" != "${{ env.AZURE_RESOURCE_GROUP }}" ]; then
-            echo "📦 Moving Public IP to Application Gateway resource group..."
-            az resource move \
-              --destination-group ${{ env.AZURE_RESOURCE_GROUP }} \
-              --ids $(az network public-ip show \
-                --name $PUBLIC_IP_NAME \
-                --resource-group $PUBLIC_IP_RG \
-                --query id -o tsv) || echo "⚠️ Could not move IP, will use from original RG"
-            PUBLIC_IP_RG="${{ env.AZURE_RESOURCE_GROUP }}"
-          fi
-          
+          # Get Public IP ID
           PUBLIC_IP_ID=$(az network public-ip show \
             --resource-group $PUBLIC_IP_RG \
             --name $PUBLIC_IP_NAME \
