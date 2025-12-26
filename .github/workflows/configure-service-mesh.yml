@@ -122,29 +122,29 @@ jobs:
       - name: 🔒 Configure mTLS
         if: github.event.inputs.enable_mtls == 'true'
         run: |
-          echo "🔒 Configuring strict mTLS for service-to-service communication..."
+          echo "🔒 Configuring PERMISSIVE mTLS (allows external Ingress traffic)..."
           
           cat <<EOF | kubectl apply -f -
           apiVersion: security.istio.io/v1beta1
           kind: PeerAuthentication
           metadata:
-            name: default-mtls-strict
+            name: default-mtls-permissive
             namespace: aks-istio-system
           spec:
             mtls:
-              mode: STRICT
+              mode: PERMISSIVE
           ---
           apiVersion: security.istio.io/v1beta1
           kind: PeerAuthentication
           metadata:
-            name: dx02-mtls-strict
+            name: dx02-mtls-permissive
             namespace: dx02
           spec:
             mtls:
-              mode: STRICT
+              mode: PERMISSIVE
           EOF
           
-          echo "✅ mTLS configured successfully"
+          echo "✅ mTLS configured successfully (PERMISSIVE mode - allows Nginx Ingress)"
 
       - name: 🌐 Deploy Istio Ingress Gateway
         if: github.event.inputs.enable_ingress_gateway == 'true'
