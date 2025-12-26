@@ -33,7 +33,7 @@ on:
         description: 'Deploy Azure Application Gateway with WAF'
         required: true
         type: boolean
-        default: true
+        default: false
       app_gateway_sku:
         description: 'Application Gateway SKU'
         required: true
@@ -61,7 +61,7 @@ env:
   LOCATION: eastus
   APP_GATEWAY_NAME: tx02-${{ github.event.inputs.environment }}-appgw
   VNET_NAME: tx02-${{ github.event.inputs.environment }}-vnet
-  APP_GATEWAY_SUBNET: appgw-subnet
+  APP_GATEWAY_SUBNET: tx02-${{ github.event.inputs.environment }}-subnet-appgw
 
 jobs:
   deploy-cert-manager:
@@ -231,23 +231,31 @@ jobs:
             echo "📦 Application Gateway não existe"
           fi
 
-      - name: 🌐 Create subnet for Application Gateway
+      - name: 🌐 Verify subnet for Application Gateway
         if: steps.check-appgw.outputs.exists == 'false'
         run: |
-          echo "🌐 Creating subnet for Application Gateway..."
+          echo "🌐 Verifying subnet for Application Gateway..."
           
           # Check if subnet already exists
           if az network vnet subnet show \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --vnet-name ${{ env.VNET_NAME }} \
             --name ${{ env.APP_GATEWAY_SUBNET }} &> /dev/null; then
-            echo "✅ Subnet already exists"
+            echo "✅ Subnet '${{ env.APP_GATEWAY_SUBNET }}' already exists"
+            
+            SUBNET_PREFIX=$(az network vnet subnet show \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --vnet-name ${{ env.VNET_NAME }} \
+              --name ${{ env.APP_GATEWAY_SUBNET }} \
+              --query addressPrefix -o tsv)
+            echo "   Address prefix: $SUBNET_PREFIX"
           else
+            echo "❌ Subnet does not exist. Creating with address prefix 10.0.5.0/24..."
             az network vnet subnet create \
               --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
               --vnet-name ${{ env.VNET_NAME }} \
               --name ${{ env.APP_GATEWAY_SUBNET }} \
-              --address-prefixes 10.1.0.0/24
+              --address-prefixes 10.0.5.0/24
             
             echo "✅ Subnet created"
           fi
