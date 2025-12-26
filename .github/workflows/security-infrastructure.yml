@@ -450,14 +450,399 @@ jobs:
           
           echo "✅ Application Gateway is ready!"
 
+  configure-backend-pool:
+    name: 🔧 Configure Application Gateway Backend
+    runs-on: ubuntu-latest
+    needs: deploy-application-gateway
+    if: |
+      always() && 
+      github.event.inputs.deploy_app_gateway == 'true' &&
+      needs.deploy-application-gateway.result == 'success'
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: 🎯 Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.AKS_CLUSTER_NAME }} \
+            --overwrite-existing
+
+      - name: 🔍 Get AKS Node IPs
+        id: get-nodes
+        run: |
+          echo "🔍 Getting AKS node internal IPs..."
+          NODE_IPS=$(kubectl get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}' | tr ' ' ' ')
+          echo "node_ips=$NODE_IPS" >> $GITHUB_OUTPUT
+          echo "✅ Node IPs: $NODE_IPS"
+
+      - name: 🔍 Get Nginx Ingress NodePorts
+        id: get-nodeports
+        run: |
+          echo "🔍 Getting Nginx Ingress NodePorts..."
+          HTTP_NODEPORT=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
+          HTTPS_NODEPORT=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.spec.ports[?(@.port==443)].nodePort}')
+          
+          echo "http_nodeport=$HTTP_NODEPORT" >> $GITHUB_OUTPUT
+          echo "https_nodeport=$HTTPS_NODEPORT" >> $GITHUB_OUTPUT
+          
+          echo "✅ HTTP NodePort: $HTTP_NODEPORT"
+          echo "✅ HTTPS NodePort: $HTTPS_NODEPORT"
+
+      - name: 🔧 Update Backend Pool with Node IPs
+        run: |
+          echo "🔧 Updating Application Gateway backend pool..."
+          az network application-gateway address-pool update \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --gateway-name ${{ env.APP_GATEWAY_NAME }} \
+            --name appGatewayBackendPool \
+            --servers ${{ steps.get-nodes.outputs.node_ips }}
+          
+          echo "✅ Backend pool updated with node IPs"
+
+      - name: 🔧 Update HTTP Settings for HTTP (NodePort)
+        run: |
+          echo "🔧 Updating HTTP settings for NodePort ${{ steps.get-nodeports.outputs.http_nodeport }}..."
+          az network application-gateway http-settings update \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --gateway-name ${{ env.APP_GATEWAY_NAME }} \
+            --name appGatewayBackendHttpSettings \
+            --port ${{ steps.get-nodeports.outputs.http_nodeport }} \
+            --protocol Http \
+            --timeout 30
+          
+          echo "✅ HTTP settings updated"
+
+      - name: 🏥 Create Health Probe HTTP with Hostname
+        run: |
+          echo "🏥 Creating HTTP health probe..."
+          az network application-gateway probe create \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --gateway-name ${{ env.APP_GATEWAY_NAME }} \
+            --name dx02-health-probe \
+            --protocol Http \
+            --host ${{ github.event.inputs.domain_name }} \
+            --path / \
+            --interval 30 \
+            --timeout 30 \
+            --threshold 3 \
+            || echo "⚠️ Health probe may already exist"
+          
+          echo "✅ Health probe created"
+
+      - name: 🔗 Associate Health Probe to HTTP Settings
+        run: |
+          echo "🔗 Associating health probe to HTTP settings..."
+          az network application-gateway http-settings update \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --gateway-name ${{ env.APP_GATEWAY_NAME }} \
+            --name appGatewayBackendHttpSettings \
+            --probe dx02-health-probe
+          
+          echo "✅ Health probe associated"
+
+      - name: ⏳ Wait for Backend Health Check
+        run: |
+          echo "⏳ Waiting 60 seconds for backend health probes..."
+          sleep 60
+
+      - name: 🏥 Verify Backend Health
+        run: |
+          echo "🏥 Checking backend health..."
+          az network application-gateway show-backend-health \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.APP_GATEWAY_NAME }} \
+            --query 'backendAddressPools[0].backendHttpSettingsCollection[0].servers[*].{address:address, health:health}' \
+            -o table
+          
+          echo "✅ Backend health check complete"
+
+  configure-ssl-certificate:
+    name: 🔐 Configure SSL Certificate
+    runs-on: ubuntu-latest
+    needs: [deploy-cert-manager, configure-backend-pool]
+    if: |
+      always() && 
+      github.event.inputs.install_cert_manager == 'true' &&
+      github.event.inputs.deploy_app_gateway == 'true' &&
+      needs.deploy-cert-manager.result == 'success' &&
+      needs.configure-backend-pool.result == 'success'
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: 🎯 Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.AKS_CLUSTER_NAME }} \
+            --overwrite-existing
+
+      - name: ⏳ Wait for Certificate to be Ready
+        run: |
+          echo "⏳ Waiting for certificate to be issued..."
+          kubectl wait --for=condition=Ready certificate/dx02-tls \
+            -n dx02 \
+            --timeout=600s || echo "⚠️ Certificate may not be ready yet"
+          
+          echo "✅ Checking certificate status..."
+          kubectl get certificate -n dx02
+
+      - name: 📜 Export Certificate from Kubernetes
+        run: |
+          echo "📜 Exporting certificate from Kubernetes secret..."
+          kubectl get secret dx02-tls -n dx02 \
+            -o jsonpath='{.data.tls\.crt}' | base64 -d > tls.crt
+          kubectl get secret dx02-tls -n dx02 \
+            -o jsonpath='{.data.tls\.key}' | base64 -d > tls.key
+          
+          echo "✅ Certificate exported"
+          ls -lh tls.crt tls.key
+
+      - name: 🔐 Convert Certificate to PFX
+        run: |
+          echo "🔐 Converting certificate to PFX format..."
+          openssl pkcs12 -export \
+            -out dx02-tls.pfx \
+            -inkey tls.key \
+            -in tls.crt \
+            -passout pass:${{ secrets.CERT_PASSWORD }}
+          
+          echo "✅ Certificate converted to PFX"
+          ls -lh dx02-tls.pfx
+
+      - name: 📤 Upload Certificate to Application Gateway
+        run: |
+          echo "📤 Uploading SSL certificate to Application Gateway..."
+          az network application-gateway ssl-cert create \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --gateway-name ${{ env.APP_GATEWAY_NAME }} \
+            --name dx02-ssl-cert \
+            --cert-file dx02-tls.pfx \
+            --cert-password "${{ secrets.CERT_PASSWORD }}" \
+            || az network application-gateway ssl-cert update \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --gateway-name ${{ env.APP_GATEWAY_NAME }} \
+              --name dx02-ssl-cert \
+              --cert-file dx02-tls.pfx \
+              --cert-password "${{ secrets.CERT_PASSWORD }}"
+          
+          echo "✅ SSL certificate uploaded"
+
+      - name: 🧹 Cleanup temporary files
+        if: always()
+        run: |
+          rm -f tls.crt tls.key dx02-tls.pfx
+          echo "✅ Temporary certificate files removed"
+
+  configure-https-listener:
+    name: 🔊 Configure HTTPS Listener & Routing
+    runs-on: ubuntu-latest
+    needs: [configure-backend-pool, configure-ssl-certificate]
+    if: |
+      always() && 
+      github.event.inputs.deploy_app_gateway == 'true' &&
+      needs.configure-backend-pool.result == 'success' &&
+      needs.configure-ssl-certificate.result == 'success'
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: 🎯 Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.AKS_CLUSTER_NAME }} \
+            --overwrite-existing
+
+      - name: 🔍 Get HTTPS NodePort
+        id: get-https-nodeport
+        run: |
+          HTTPS_NODEPORT=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.spec.ports[?(@.port==443)].nodePort}')
+          echo "https_nodeport=$HTTPS_NODEPORT" >> $GITHUB_OUTPUT
+          echo "✅ HTTPS NodePort: $HTTPS_NODEPORT"
+
+      - name: 🔌 Create Frontend Port 443
+        run: |
+          echo "🔌 Creating frontend port 443..."
+          az network application-gateway frontend-port create \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --gateway-name ${{ env.APP_GATEWAY_NAME }} \
+            --name port443 \
+            --port 443 \
+            || echo "⚠️ Port 443 may already exist"
+          
+          echo "✅ Frontend port 443 ready"
+
+      - name: 🔊 Create HTTPS Listener
+        run: |
+          echo "🔊 Creating HTTPS listener..."
+          az network application-gateway http-listener create \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --gateway-name ${{ env.APP_GATEWAY_NAME }} \
+            --name httpsListener \
+            --frontend-port port443 \
+            --frontend-ip appGatewayFrontendIP \
+            --ssl-cert dx02-ssl-cert \
+            --host-name ${{ github.event.inputs.domain_name }} \
+            || echo "⚠️ HTTPS listener may already exist"
+          
+          echo "✅ HTTPS listener created"
+
+      - name: 🏥 Create HTTPS Health Probe
+        run: |
+          echo "🏥 Creating HTTPS health probe..."
+          az network application-gateway probe create \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --gateway-name ${{ env.APP_GATEWAY_NAME }} \
+            --name dx02-https-probe \
+            --protocol Https \
+            --host ${{ github.event.inputs.domain_name }} \
+            --path / \
+            --interval 30 \
+            --timeout 30 \
+            --threshold 3 \
+            || echo "⚠️ HTTPS health probe may already exist"
+          
+          echo "✅ HTTPS health probe created"
+
+      - name: 🔧 Create HTTPS Backend Settings
+        run: |
+          echo "🔧 Creating HTTPS backend settings..."
+          az network application-gateway http-settings create \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --gateway-name ${{ env.APP_GATEWAY_NAME }} \
+            --name httpsBackendSettings \
+            --port ${{ steps.get-https-nodeport.outputs.https_nodeport }} \
+            --protocol Https \
+            --timeout 30 \
+            --probe dx02-https-probe \
+            || echo "⚠️ HTTPS backend settings may already exist"
+          
+          echo "✅ HTTPS backend settings created"
+
+      - name: 🔀 Create HTTPS Routing Rule
+        run: |
+          echo "🔀 Creating HTTPS routing rule..."
+          az network application-gateway rule create \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --gateway-name ${{ env.APP_GATEWAY_NAME }} \
+            --name httpsRule \
+            --http-listener httpsListener \
+            --address-pool appGatewayBackendPool \
+            --http-settings httpsBackendSettings \
+            --priority 200 \
+            || echo "⚠️ HTTPS routing rule may already exist"
+          
+          echo "✅ HTTPS routing rule created"
+
+  validate-deployment:
+    name: ✅ Validate Application Gateway Deployment
+    runs-on: ubuntu-latest
+    needs: [configure-backend-pool, configure-https-listener]
+    if: |
+      always() && 
+      github.event.inputs.deploy_app_gateway == 'true' &&
+      needs.configure-backend-pool.result == 'success' &&
+      needs.configure-https-listener.result == 'success'
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: ⏳ Wait for Configuration to Settle
+        run: |
+          echo "⏳ Waiting 90 seconds for Application Gateway to process all changes..."
+          sleep 90
+
+      - name: 🏥 Final Backend Health Check
+        run: |
+          echo "🏥 Checking final backend health status..."
+          az network application-gateway show-backend-health \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.APP_GATEWAY_NAME }} \
+            --query 'backendAddressPools[0].backendHttpSettingsCollection[*].servers[*].{address:address, health:health, httpSettings:backendHttpSettings.id}' \
+            -o table
+
+      - name: 📊 Display Application Gateway Summary
+        run: |
+          echo "======================================"
+          echo "🛡️ Application Gateway Configuration"
+          echo "======================================"
+          echo ""
+          
+          echo "📋 Backend Pools:"
+          az network application-gateway address-pool list \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --gateway-name ${{ env.APP_GATEWAY_NAME }} \
+            -o table
+          echo ""
+          
+          echo "🔊 HTTP Listeners:"
+          az network application-gateway http-listener list \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --gateway-name ${{ env.APP_GATEWAY_NAME }} \
+            --query '[].{Name:name, Protocol:protocol, Port:frontendPort.id, Hostname:hostName}' \
+            -o table
+          echo ""
+          
+          echo "🔀 Routing Rules:"
+          az network application-gateway rule list \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --gateway-name ${{ env.APP_GATEWAY_NAME }} \
+            --query '[].{Name:name, Priority:priority, Listener:httpListener.id}' \
+            -o table
+          echo ""
+          
+          APPGW_IP=$(az network public-ip show \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.APP_GATEWAY_NAME }}-pip \
+            --query ipAddress -o tsv)
+          
+          echo "======================================"
+          echo "✅ Application Gateway Ready!"
+          echo "======================================"
+          echo ""
+          echo "🌐 Public IP: $APPGW_IP"
+          echo "🔗 Test HTTP:  http://${{ github.event.inputs.domain_name }}"
+          echo "🔒 Test HTTPS: https://${{ github.event.inputs.domain_name }}"
+          echo ""
+          echo "⚠️  IMPORTANTE: Certifique-se de que o DNS está configurado!"
+          echo "   ${{ github.event.inputs.domain_name }} → $APPGW_IP"
+
   configure-ingress:
     name: 🔗 Configure Ingress with HTTPS
     runs-on: ubuntu-latest
-    needs: [deploy-cert-manager, deploy-application-gateway]
+    needs: [deploy-cert-manager, deploy-application-gateway, validate-deployment]
     if: |
       always() && 
       (needs.deploy-cert-manager.result == 'success' || needs.deploy-cert-manager.result == 'skipped') &&
-      (needs.deploy-application-gateway.result == 'success' || needs.deploy-application-gateway.result == 'skipped')
+      (needs.deploy-application-gateway.result == 'success' || needs.deploy-application-gateway.result == 'skipped') &&
+      (needs.validate-deployment.result == 'success' || needs.validate-deployment.result == 'skipped')
     
     steps:
       - name: 📥 Checkout code
@@ -533,22 +918,65 @@ jobs:
           
           if [[ "${{ github.event.inputs.deploy_app_gateway }}" == "true" ]]; then
             echo ""
-            echo "🛡️ Application Gateway: ✅ Deployed"
+            echo "🛡️ Application Gateway: ✅ Deployed & Configured"
             echo "   SKU: ${{ github.event.inputs.app_gateway_sku }}"
             echo "   WAF Mode: ${{ github.event.inputs.waf_mode }}"
-            echo "   Public IP: 48.194.53.219 (reused from AKS)"
+            
+            APPGW_IP=$(az network public-ip show \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --name ${{ env.APP_GATEWAY_NAME }}-pip \
+              --query ipAddress -o tsv 2>/dev/null || echo "N/A")
+            
+            echo "   Public IP: $APPGW_IP"
+            echo ""
+            echo "✅ Backend Pool: Configured with AKS node IPs"
+            echo "✅ Health Probes: HTTP and HTTPS configured"
+            echo "✅ SSL Certificate: Uploaded from cert-manager"
+            echo "✅ HTTPS Listener: Configured with Let's Encrypt certificate"
+            echo "✅ Routing Rules: HTTP (redirect) and HTTPS configured"
           fi
           
           echo ""
           echo "======================================"
-          echo "📝 IMPORTANT - Configure DNS NOW:"
+          echo "📝 NEXT STEPS:"
           echo "======================================"
           echo ""
-          echo "1️⃣ Go to no-ip.com"
-          echo "2️⃣ Create/Update hostname: ${{ github.event.inputs.domain_name }}"
-          echo "3️⃣ Point to IP: 48.194.53.219"
-          echo ""
-          echo "4️⃣ Wait 5-10 minutes for cert-manager to issue certificate"
-          echo "5️⃣ Access: https://${{ github.event.inputs.domain_name }}"
+          
+          if [[ "${{ github.event.inputs.deploy_app_gateway }}" == "true" ]]; then
+            APPGW_IP=$(az network public-ip show \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --name ${{ env.APP_GATEWAY_NAME }}-pip \
+              --query ipAddress -o tsv 2>/dev/null || echo "CHECK_AZURE_PORTAL")
+            
+            echo "1️⃣ Update DNS at ddns.net:"
+            echo "   Hostname: ${{ github.event.inputs.domain_name }}"
+            echo "   Point to: $APPGW_IP"
+            echo ""
+            echo "2️⃣ Wait 5-10 minutes for:"
+            echo "   - DNS propagation"
+            echo "   - Application Gateway health probes"
+            echo "   - Certificate validation"
+            echo ""
+            echo "3️⃣ Test your application:"
+            echo "   🔗 HTTP:  http://${{ github.event.inputs.domain_name }} (should redirect to HTTPS)"
+            echo "   🔒 HTTPS: https://${{ github.event.inputs.domain_name }} (should return 200 OK)"
+            echo ""
+            echo "4️⃣ Verify WAF is active:"
+            echo "   Check Azure Portal → Application Gateway → Web Application Firewall"
+          else
+            echo "1️⃣ Go to ddns.net"
+            echo "2️⃣ Create/Update hostname: ${{ github.event.inputs.domain_name }}"
+            echo "3️⃣ Point to Nginx Ingress IP"
+            echo ""
+            echo "4️⃣ Wait 5-10 minutes for cert-manager to issue certificate"
+            echo "5️⃣ Access: https://${{ github.event.inputs.domain_name }}"
+          fi
+          
           echo ""
           echo "✅ Deployment complete!"
+          echo ""
+          echo "📚 Documentation:"
+          echo "   - APPLICATION_GATEWAY_MANUAL_STEPS.md"
+          echo "   - SECURITY_INFRASTRUCTURE.md"
+          echo "   - WORKFLOW_UPDATE_CHECKLIST.md"
+

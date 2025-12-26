@@ -155,6 +155,9 @@ O free tier oferece um botão "Apply offer" que não pode ser automatizado via T
 - ✅ **Azure Application Gateway** - WAF_v2 com AGIC
 - ✅ **WAF Detection Mode** - Análise de ataques sem bloqueio (para tuning inicial)
 - ✅ **HTTPS Automation** - SSL/TLS end-to-end automático
+- ✅ **Backend Pool Configuration** - IPs dos nodes AKS para roteamento
+- ✅ **Custom Health Probes** - HTTP/HTTPS com hostname correto
+- ✅ **SSL Certificate Management** - Exportação e conversão automática de Let's Encrypt para PFX
 
 ### 🎯 **Desafios Superados**
 - ✅ PostgreSQL → Azure SQL Database migration (Free Trial restriction)
@@ -178,6 +181,10 @@ O free tier oferece um botão "Apply offer" que não pode ser automatizado via T
   - [k8s/observability/IMPLEMENTATION.md](k8s/observability/IMPLEMENTATION.md) - Detalhes técnicos da implementação
 - 🔍 **Qualidade de Código:**
   - [SONARQUBE.md](SONARQUBE.md) - Análise de qualidade com SonarCloud
+- 🛡️ **Segurança & WAF:**
+  - [SECURITY_INFRASTRUCTURE.md](SECURITY_INFRASTRUCTURE.md) - cert-manager e Application Gateway WAF
+  - [APPLICATION_GATEWAY_MANUAL_STEPS.md](APPLICATION_GATEWAY_MANUAL_STEPS.md) - **Passos manuais executados para configurar Application Gateway completo**
+  - [SERVICE_MESH.md](SERVICE_MESH.md) - Arquitetura do Service Mesh com Istio
 - 🔒 **Segurança:**
   - [SECURITY_SCANNING.md](SECURITY_SCANNING.md) - Trivy e OPA Gatekeeper
   - [k8s/policies/README.md](k8s/policies/README.md) - Políticas do Gatekeeper
