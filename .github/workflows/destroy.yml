@@ -278,12 +278,122 @@ jobs:
             echo "✅ AKS managed resource group already deleted"
           fi
       
+      - name: Force Delete Remaining Resources
+        continue-on-error: true
+        run: |
+          echo "🧹 Force deleting any remaining resources in tx02-${{ github.event.inputs.environment }}-rg..."
+          
+          RESOURCE_GROUP="tx02-${{ github.event.inputs.environment }}-rg"
+          
+          if ! az group show --name "$RESOURCE_GROUP" &>/dev/null; then
+            echo "✅ Resource group already deleted"
+            exit 0
+          fi
+          
+          # Get all remaining resources
+          REMAINING=$(az resource list --resource-group "$RESOURCE_GROUP" --query "[].{Name:name, Type:type}" -o json)
+          RESOURCE_COUNT=$(echo "$REMAINING" | jq '. | length')
+          
+          if [ "$RESOURCE_COUNT" -eq 0 ]; then
+            echo "✅ No remaining resources to delete"
+          else
+            echo "⚠️ Found $RESOURCE_COUNT remaining resource(s), force deleting..."
+            echo "$REMAINING" | jq -r '.[] | "  - \(.Name) (\(.Type))"'
+            
+            # Force delete Application Gateway first (takes longest)
+            echo ""
+            echo "🗑️ Deleting Application Gateway..."
+            az network application-gateway delete \
+              --resource-group "$RESOURCE_GROUP" \
+              --name "tx02-${{ github.event.inputs.environment }}-appgw" \
+              --no-wait 2>/dev/null || echo "  (not found or already deleted)"
+            
+            # Delete WAF Policy
+            echo "🗑️ Deleting WAF Policy..."
+            az network application-gateway waf-policy delete \
+              --resource-group "$RESOURCE_GROUP" \
+              --name "tx02-${{ github.event.inputs.environment }}-appgw-waf-policy" \
+              2>/dev/null || echo "  (not found or already deleted)"
+            
+            # Delete Application Insights
+            echo "🗑️ Deleting Application Insights..."
+            az monitor app-insights component delete \
+              --resource-group "$RESOURCE_GROUP" \
+              --app "tx02-${{ github.event.inputs.environment }}-appinsights" \
+              --yes 2>/dev/null || echo "  (not found or already deleted)"
+            
+            # Delete Container Insights Solution
+            echo "🗑️ Deleting Container Insights..."
+            az resource delete \
+              --resource-group "$RESOURCE_GROUP" \
+              --name "ContainerInsights(tx02-${{ github.event.inputs.environment }}-logs)" \
+              --resource-type "Microsoft.OperationsManagement/solutions" \
+              2>/dev/null || echo "  (not found or already deleted)"
+            
+            # Delete Action Group
+            echo "🗑️ Deleting Action Group..."
+            az monitor action-group delete \
+              --resource-group "$RESOURCE_GROUP" \
+              --name "Application Insights Smart Detection" \
+              2>/dev/null || echo "  (not found or already deleted)"
+            
+            # Delete Public IPs
+            echo "🗑️ Deleting Public IPs..."
+            az network public-ip list --resource-group "$RESOURCE_GROUP" --query "[].name" -o tsv | \
+              xargs -I {} az network public-ip delete --resource-group "$RESOURCE_GROUP" --name {} --no-wait 2>/dev/null || true
+            
+            # Wait for App Gateway to be deleted before deleting VNet
+            echo "⏳ Waiting for Application Gateway deletion..."
+            sleep 60
+            
+            # Delete Virtual Network (must be last)
+            echo "🗑️ Deleting Virtual Network..."
+            az network vnet delete \
+              --resource-group "$RESOURCE_GROUP" \
+              --name "tx02-${{ github.event.inputs.environment }}-vnet" \
+              2>/dev/null || echo "  (not found or already deleted)"
+            
+            echo "✅ Force deletion completed"
+          fi
+      
+      - name: Delete Resource Group
+        continue-on-error: true
+        run: |
+          echo "🗑️ Deleting resource group tx02-${{ github.event.inputs.environment }}-rg..."
+          
+          if az group show --name tx02-${{ github.event.inputs.environment }}-rg &>/dev/null; then
+            # List remaining resources before deletion
+            echo "📋 Remaining resources before RG deletion:"
+            az resource list --resource-group tx02-${{ github.event.inputs.environment }}-rg --query "[].name" -o tsv || true
+            
+            # Force delete the entire resource group
+            az group delete \
+              --name tx02-${{ github.event.inputs.environment }}-rg \
+              --yes \
+              --no-wait
+            
+            echo "✅ Resource group deletion initiated"
+          else
+            echo "✅ Resource group already deleted"
+          fi
+      
       - name: Verify Destruction
         run: |
           echo "🔍 Verifying resource destruction..."
           
+          echo "⏳ Waiting 30 seconds for resource group deletion to propagate..."
+          sleep 30
+          
           if az group show --name tx02-${{ github.event.inputs.environment }}-rg &>/dev/null; then
-            echo "⚠️ Resource Group still exists"
+            echo "⚠️ Resource Group still exists (deletion in progress)"
+            echo "   This is normal - deletion can take several minutes"
+            
+            # Check remaining resources
+            REMAINING=$(az resource list --resource-group tx02-${{ github.event.inputs.environment }}-rg --query "[].name" -o tsv 2>/dev/null || echo "")
+            if [ -n "$REMAINING" ]; then
+              echo "   Remaining resources:"
+              echo "$REMAINING" | sed 's/^/     - /'
+            fi
           else
             echo "✅ Resource Group successfully destroyed"
           fi
