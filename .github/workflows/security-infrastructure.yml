@@ -287,6 +287,28 @@ jobs:
           echo ""
           echo "⚠️  Configure your DNS to point to: $IP_ADDRESS"
 
+      - name: 🛡️ Create WAF Policy (before Application Gateway)
+        if: steps.check-appgw.outputs.exists == 'false' && github.event.inputs.app_gateway_sku == 'WAF_v2'
+        run: |
+          echo "🛡️ Creating WAF policy..."
+          
+          # Create WAF policy
+          az network application-gateway waf-policy create \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.APP_GATEWAY_NAME }}-waf-policy \
+            --location ${{ env.LOCATION }}
+          
+          # Configure WAF settings
+          az network application-gateway waf-policy policy-setting update \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --policy-name ${{ env.APP_GATEWAY_NAME }}-waf-policy \
+            --mode ${{ github.event.inputs.waf_mode }} \
+            --state Enabled \
+            --max-request-body-size-in-kb 128 \
+            --file-upload-limit-in-mb 100
+          
+          echo "✅ WAF policy created"
+
       - name: 🛡️ Create Application Gateway with WAF
         if: steps.check-appgw.outputs.exists == 'false'
         run: |
@@ -323,6 +345,18 @@ jobs:
             --name $PUBLIC_IP_NAME \
             --query id -o tsv)
           
+          # Get WAF Policy ID if SKU is WAF_v2
+          if [ "${{ github.event.inputs.app_gateway_sku }}" == "WAF_v2" ]; then
+            WAF_POLICY_ID=$(az network application-gateway waf-policy show \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --name ${{ env.APP_GATEWAY_NAME }}-waf-policy \
+              --query id -o tsv)
+            echo "🛡️ Using WAF Policy: $WAF_POLICY_ID"
+            WAF_POLICY_ARG="--waf-policy $WAF_POLICY_ID"
+          else
+            WAF_POLICY_ARG=""
+          fi
+          
           # Create Application Gateway
           az network application-gateway create \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
@@ -338,11 +372,12 @@ jobs:
             --http-settings-port 80 \
             --http-settings-protocol Http \
             --priority 100 \
+            $WAF_POLICY_ARG \
             --tags Environment=${{ github.event.inputs.environment }} ManagedBy=GitHub-Actions
           
           echo "✅ Application Gateway created"
 
-      - name: 🛡️ Configure WAF Policy
+      - name: 🛡️ Verify WAF Policy association
         if: github.event.inputs.app_gateway_sku == 'WAF_v2'
         run: |
           echo "🛡️ Configuring WAF policy..."
