@@ -234,6 +234,46 @@ jobs:
             echo "⚠️ Resource Group not found"
           fi
       
+      - name: Pre-Destroy Cleanup - Delete Application Gateway
+        continue-on-error: true
+        run: |
+          echo "🗑️ Pre-cleanup: Deleting Application Gateway and dependencies..."
+          
+          RESOURCE_GROUP="tx02-${{ github.event.inputs.environment }}-rg"
+          
+          # Delete Application Gateway first (blocks subnet deletion)
+          echo "🗑️ Deleting Application Gateway..."
+          az network application-gateway delete \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "tx02-${{ github.event.inputs.environment }}-appgw" \
+            --yes \
+            2>/dev/null && echo "✅ Application Gateway deleted" || echo "⚠️ Application Gateway not found"
+          
+          # Delete WAF Policy
+          echo "🗑️ Deleting WAF Policy..."
+          az network application-gateway waf-policy delete \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "tx02-${{ github.event.inputs.environment }}-appgw-waf-policy" \
+            2>/dev/null && echo "✅ WAF Policy deleted" || echo "⚠️ WAF Policy not found"
+          
+          # Delete Application Insights
+          echo "🗑️ Deleting Application Insights..."
+          az monitor app-insights component delete \
+            --resource-group "$RESOURCE_GROUP" \
+            --app "tx02-${{ github.event.inputs.environment }}-appinsights" \
+            --yes \
+            2>/dev/null && echo "✅ Application Insights deleted" || echo "⚠️ Application Insights not found"
+          
+          # Delete Container Insights Solution
+          echo "🗑️ Deleting Container Insights..."
+          az resource delete \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "ContainerInsights(tx02-${{ github.event.inputs.environment }}-logs)" \
+            --resource-type "Microsoft.OperationsManagement/solutions" \
+            2>/dev/null && echo "✅ Container Insights deleted" || echo "⚠️ Container Insights not found"
+          
+          echo "✅ Pre-cleanup completed"
+      
       - name: Terraform Init
         run: terraform init
         working-directory: terraform/${{ github.event.inputs.environment }}
