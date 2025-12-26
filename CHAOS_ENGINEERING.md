@@ -1,4 +1,4 @@
-# 🔥 Chaos Engineering - Azure Chaos Studio & Chaos Mesh
+# 🔥 Chaos Engineering - Chaos Mesh no Azure AKS
 
 ## 📋 Índice
 
@@ -26,19 +26,21 @@ Chaos Engineering é a disciplina de experimentar em um sistema para construir c
 - ✅ **Aumentar confiança** na capacidade de recuperação do sistema
 - ✅ **Documentar comportamento** do sistema sob stress
 
-### Ferramentas Utilizadas
+### Ferramenta Utilizada
 
-**Azure Chaos Studio**
-- Plataforma gerenciada da Microsoft para Chaos Engineering
-- Integração nativa com recursos Azure (AKS, VMs, etc)
-- Interface web para gerenciar experimentos
-- Custo: ~$0.40 USD por hora de experimento
-
-**Chaos Mesh**
+**Chaos Mesh** ⭐ **ESCOLHIDO PARA ESTE PROJETO**
 - Framework open-source CNCF para Kubernetes
+- **100% gratuito** - Sem custos adicionais!
 - Mais flexível e customizável
-- Gratuito (apenas custos de infraestrutura)
 - Dashboard web integrado
+- Amplamente adotado pela comunidade
+- Suporta todos os tipos de chaos: Pod, Network, Stress, IO, Time
+
+> 💡 **Decisão Arquitetural**: Optamos por usar apenas Chaos Mesh ao invés do Azure Chaos Studio pois:
+> - **Custo Zero**: Chaos Mesh é open source e gratuito
+> - **Funcionalidade Completa**: Oferece todos os tipos de experimentos necessários
+> - **Melhor para Learning**: Mais documentação e exemplos da comunidade
+> - **Vendor Independent**: Funciona em qualquer Kubernetes (não apenas Azure)
 
 ---
 
@@ -48,25 +50,17 @@ Chaos Engineering é a disciplina de experimentar em um sistema para construir c
 
 | Componente | Custo Estimado | Período |
 |------------|---------------|---------|
-| Azure Chaos Studio | $0.40/hora | Por experimento ativo |
-| Chaos Mesh (OSS) | $0.00 | Gratuito |
+| Chaos Mesh (OSS) | **$0.00** | **Gratuito** ✅ |
 | AKS (já existente) | $0.00 | Sem custo adicional |
 | Monitoramento adicional | ~$5/mês | Azure Monitor logs extras |
-| **Total estimado** | **~$10-20** | **Para testes completos** |
+| **Total estimado** | **$0.00** | **Completamente grátis!** 🎉 |
 
-### Com R$400 de crédito você pode:
-- ✅ Executar ~50 horas de experimentos no Azure Chaos Studio
-- ✅ Rodar Chaos Mesh ilimitadamente (open source)
-- ✅ Fazer testes extensivos por vários dias
-- ✅ Implementar e validar melhorias iterativamente
+### Com seu Budget de R$400:
 
-### Otimização de Custos
-
-1. **Use Chaos Mesh para testes iniciais** (gratuito)
-2. **Azure Chaos Studio para testes avançados** (pago mas gerenciado)
-3. **Execute experimentos em horários específicos** (não deixe 24/7)
-4. **Use dry-run para validar sem executar** (custo zero)
-5. **Cleanup automático após experimentos** (evita custos residuais)
+✅ **100% preservado!** Chaos Mesh é completamente gratuito
+✅ **Use os créditos para outros recursos** (ex: aumentar cluster, adicionar storage)
+✅ **Teste ilimitadamente** sem preocupação com custos
+✅ **Melhor ROI**: Máximo aprendizado com zero custo adicional
 
 ---
 
@@ -77,8 +71,7 @@ Chaos Engineering é a disciplina de experimentar em um sistema para construir c
 │                    GitHub Actions                            │
 │                                                              │
 │  Workflow: chaos-engineering.yml                            │
-│  ├─ Setup Chaos Studio                                      │
-│  ├─ Install Chaos Mesh                                      │
+│  ├─ Setup Chaos Mesh                                        │
 │  ├─ Run Experiments                                         │
 │  └─ Validate & Cleanup                                      │
 │                          │                                   │
@@ -92,9 +85,9 @@ Chaos Engineering é a disciplina de experimentar em um sistema para construir c
 │  │ Namespace: chaos-testing                               │ │
 │  │                                                        │ │
 │  │  Chaos Mesh Components:                                │ │
-│  │  ├─ Chaos Controller Manager                          │ │
+│  │  ├─ Chaos Controller Manager (⚡ FREE)                │ │
 │  │  ├─ Chaos Daemon (on each node)                       │ │
-│  │  ├─ Chaos Dashboard                                   │ │
+│  │  ├─ Chaos Dashboard (UI Web)                          │ │
 │  │  └─ CRDs (PodChaos, NetworkChaos, StressChaos, etc)  │ │
 │  └────────────────────────────────────────────────────────┘ │
 │                          │                                   │
@@ -561,11 +554,10 @@ Após implementar Chaos Engineering, considere:
 
 ### Para o seu budget de R$400:
 
-1. **Use Chaos Mesh primeiro** (gratuito, open source)
-2. **Azure Chaos Studio apenas para testes avançados** (pago)
-3. **Execute experimentos curtos** (5-10 minutos)
-4. **Dry run sempre antes de executar** (evita surpresas)
-5. **Cleanup automático** (evita custos desnecessários)
+✅ **100% PRESERVADO!** Chaos Mesh é completamente gratuito  
+✅ **Zero custo adicional** para Chaos Engineering  
+✅ **Teste ilimitadamente** sem preocupação  
+✅ **Use os créditos para escalar** o ambiente se necessário
 
 ### Experimentos recomendados (em ordem):
 
@@ -575,10 +567,10 @@ Após implementar Chaos Engineering, considere:
 4. ✅ **CPU Stress** - Testar resource limits
 5. ✅ **All Experiments** - Teste completo
 
-**Custo estimado total**: ~$10-15 USD para todos os testes
+**Custo total**: **$0.00 USD** - Completamente gratuito! 🎉
 
 ---
 
 **Última atualização**: 26/12/2025  
-**Status**: ✅ Pronto para uso  
-**Custo estimado**: ~$10-20 USD para testes completos
+**Status**: ✅ Pronto para uso (usando Chaos Mesh)  
+**Custo estimado**: **$0.00** - Completamente gratuito!
