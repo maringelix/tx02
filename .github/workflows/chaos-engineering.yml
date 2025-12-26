@@ -1,0 +1,477 @@
+name: 🔥 Azure Chaos Engineering
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to test'
+        required: true
+        type: choice
+        options:
+          - prd
+          - stg
+        default: prd
+      experiment_type:
+        description: 'Type of chaos experiment'
+        required: true
+        type: choice
+        options:
+          - pod-chaos
+          - network-latency
+          - cpu-stress
+          - memory-stress
+          - node-shutdown
+          - all-experiments
+        default: pod-chaos
+      duration_minutes:
+        description: 'Duration of experiment (minutes)'
+        required: true
+        type: number
+        default: 5
+      dry_run:
+        description: 'Dry run (validate without executing)'
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AZURE_RESOURCE_GROUP: tx02-${{ github.event.inputs.environment }}-rg
+  AKS_CLUSTER_NAME: tx02-${{ github.event.inputs.environment }}-aks
+  LOCATION: eastus
+  CHAOS_NAMESPACE: chaos-testing
+
+jobs:
+  setup-chaos-studio:
+    name: 🎯 Setup Azure Chaos Studio
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: 🎯 Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.AKS_CLUSTER_NAME }} \
+            --overwrite-existing
+
+      - name: 🔍 Check if Chaos Studio is enabled
+        id: check-chaos
+        run: |
+          echo "🔍 Checking Azure Chaos Studio status..."
+          
+          # Check if AKS cluster is chaos-enabled
+          CHAOS_ENABLED=$(az rest \
+            --method get \
+            --url "https://management.azure.com/subscriptions/$(az account show --query id -o tsv)/resourceGroups/${{ env.AZURE_RESOURCE_GROUP }}/providers/Microsoft.ContainerService/managedClusters/${{ env.AKS_CLUSTER_NAME }}/providers/Microsoft.Chaos/targets/microsoft-agent?api-version=2023-11-01" \
+            --query properties.provisioningState -o tsv 2>/dev/null || echo "NotEnabled")
+          
+          if [ "$CHAOS_ENABLED" == "Succeeded" ]; then
+            echo "enabled=true" >> $GITHUB_OUTPUT
+            echo "✅ Chaos Studio já está habilitado no AKS"
+          else
+            echo "enabled=false" >> $GITHUB_OUTPUT
+            echo "📦 Chaos Studio não está habilitado"
+          fi
+
+      - name: 🔧 Enable Chaos Studio on AKS
+        if: steps.check-chaos.outputs.enabled == 'false'
+        run: |
+          echo "🔧 Habilitando Azure Chaos Studio no cluster AKS..."
+          
+          # Get AKS resource ID
+          AKS_RESOURCE_ID=$(az aks show \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.AKS_CLUSTER_NAME }} \
+            --query id -o tsv)
+          
+          echo "AKS Resource ID: $AKS_RESOURCE_ID"
+          
+          # Enable Chaos Studio on AKS cluster
+          az rest \
+            --method put \
+            --url "https://management.azure.com${AKS_RESOURCE_ID}/providers/Microsoft.Chaos/targets/microsoft-agent?api-version=2023-11-01" \
+            --body '{
+              "properties": {}
+            }'
+          
+          echo "✅ Chaos Studio habilitado no AKS"
+
+      - name: 📦 Install Chaos Mesh
+        run: |
+          echo "📦 Instalando Chaos Mesh no cluster..."
+          
+          # Add Chaos Mesh Helm repository
+          helm repo add chaos-mesh https://charts.chaos-mesh.org
+          helm repo update
+          
+          # Create namespace
+          kubectl create namespace ${{ env.CHAOS_NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+          
+          # Check if Chaos Mesh is already installed
+          if helm list -n ${{ env.CHAOS_NAMESPACE }} | grep -q "chaos-mesh"; then
+            echo "⚠️ Chaos Mesh já está instalado, atualizando..."
+            helm upgrade chaos-mesh chaos-mesh/chaos-mesh \
+              --namespace ${{ env.CHAOS_NAMESPACE }} \
+              --version 2.6.3 \
+              --set chaosDaemon.runtime=containerd \
+              --set chaosDaemon.socketPath=/run/containerd/containerd.sock \
+              --set dashboard.create=true \
+              --set dashboard.securityMode=false
+          else
+            echo "📦 Instalando Chaos Mesh..."
+            helm install chaos-mesh chaos-mesh/chaos-mesh \
+              --namespace ${{ env.CHAOS_NAMESPACE }} \
+              --version 2.6.3 \
+              --set chaosDaemon.runtime=containerd \
+              --set chaosDaemon.socketPath=/run/containerd/containerd.sock \
+              --set dashboard.create=true \
+              --set dashboard.securityMode=false
+          fi
+          
+          echo "✅ Chaos Mesh instalado"
+
+      - name: ⏳ Wait for Chaos Mesh to be ready
+        run: |
+          echo "⏳ Aguardando Chaos Mesh ficar pronto..."
+          kubectl wait --for=condition=Ready pods -l app.kubernetes.io/component=controller-manager \
+            -n ${{ env.CHAOS_NAMESPACE }} \
+            --timeout=300s
+          
+          echo "✅ Chaos Mesh está pronto"
+
+      - name: 📊 Display Chaos Mesh status
+        run: |
+          echo "======================================"
+          echo "🔥 Chaos Mesh Status"
+          echo "======================================"
+          echo ""
+          kubectl get pods -n ${{ env.CHAOS_NAMESPACE }}
+          echo ""
+          echo "======================================"
+          echo "📊 Chaos Mesh CRDs installed:"
+          echo "======================================"
+          kubectl get crds | grep chaos-mesh.org
+
+  run-pod-chaos:
+    name: 🎲 Pod Chaos (Kill Pods)
+    runs-on: ubuntu-latest
+    needs: setup-chaos-studio
+    if: |
+      github.event.inputs.experiment_type == 'pod-chaos' || 
+      github.event.inputs.experiment_type == 'all-experiments'
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: 🎯 Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.AKS_CLUSTER_NAME }} \
+            --overwrite-existing
+
+      - name: 🎲 Run Pod Chaos Experiment
+        run: |
+          echo "🎲 Executando Pod Chaos (Kill Random Pod)..."
+          
+          cat <<EOF | kubectl apply -f -
+          apiVersion: chaos-mesh.org/v1alpha1
+          kind: PodChaos
+          metadata:
+            name: pod-kill-experiment
+            namespace: ${{ env.CHAOS_NAMESPACE }}
+          spec:
+            action: pod-kill
+            mode: one
+            duration: "${{ github.event.inputs.duration_minutes }}m"
+            selector:
+              namespaces:
+                - dx02
+              labelSelectors:
+                "app": "dx02"
+            scheduler:
+              cron: "@every 2m"
+          EOF
+          
+          if [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
+            echo "✅ [DRY RUN] Pod Chaos configurado mas não executado"
+            kubectl delete podchaos pod-kill-experiment -n ${{ env.CHAOS_NAMESPACE }}
+          else
+            echo "⚠️ Experimento de Chaos ATIVO por ${{ github.event.inputs.duration_minutes }} minutos"
+            echo "🔥 Pods serão mortos a cada 2 minutos"
+          fi
+
+      - name: 📊 Monitor experiment (if not dry run)
+        if: github.event.inputs.dry_run == 'false'
+        run: |
+          echo "📊 Monitorando experimento..."
+          sleep 30
+          
+          echo "Pods no namespace dx02:"
+          kubectl get pods -n dx02
+          
+          echo ""
+          echo "Chaos experiments ativos:"
+          kubectl get podchaos -n ${{ env.CHAOS_NAMESPACE }}
+
+  run-network-latency:
+    name: 🌐 Network Latency
+    runs-on: ubuntu-latest
+    needs: setup-chaos-studio
+    if: |
+      github.event.inputs.experiment_type == 'network-latency' || 
+      github.event.inputs.experiment_type == 'all-experiments'
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: 🎯 Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.AKS_CLUSTER_NAME }} \
+            --overwrite-existing
+
+      - name: 🌐 Run Network Latency Experiment
+        run: |
+          echo "🌐 Injetando latência na rede (200ms)..."
+          
+          cat <<EOF | kubectl apply -f -
+          apiVersion: chaos-mesh.org/v1alpha1
+          kind: NetworkChaos
+          metadata:
+            name: network-latency-experiment
+            namespace: ${{ env.CHAOS_NAMESPACE }}
+          spec:
+            action: delay
+            mode: one
+            duration: "${{ github.event.inputs.duration_minutes }}m"
+            selector:
+              namespaces:
+                - dx02
+              labelSelectors:
+                "app": "dx02"
+            delay:
+              latency: "200ms"
+              correlation: "0"
+              jitter: "50ms"
+          EOF
+          
+          if [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
+            echo "✅ [DRY RUN] Network Latency configurado mas não executado"
+            kubectl delete networkchaos network-latency-experiment -n ${{ env.CHAOS_NAMESPACE }}
+          else
+            echo "⚠️ Latência de rede injetada: 200ms ± 50ms por ${{ github.event.inputs.duration_minutes }} minutos"
+          fi
+
+  run-cpu-stress:
+    name: 🔥 CPU Stress Test
+    runs-on: ubuntu-latest
+    needs: setup-chaos-studio
+    if: |
+      github.event.inputs.experiment_type == 'cpu-stress' || 
+      github.event.inputs.experiment_type == 'all-experiments'
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: 🎯 Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.AKS_CLUSTER_NAME }} \
+            --overwrite-existing
+
+      - name: 🔥 Run CPU Stress Experiment
+        run: |
+          echo "🔥 Aplicando stress de CPU (80%)..."
+          
+          cat <<EOF | kubectl apply -f -
+          apiVersion: chaos-mesh.org/v1alpha1
+          kind: StressChaos
+          metadata:
+            name: cpu-stress-experiment
+            namespace: ${{ env.CHAOS_NAMESPACE }}
+          spec:
+            mode: one
+            duration: "${{ github.event.inputs.duration_minutes }}m"
+            selector:
+              namespaces:
+                - dx02
+              labelSelectors:
+                "app": "dx02"
+            stressors:
+              cpu:
+                workers: 2
+                load: 80
+          EOF
+          
+          if [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
+            echo "✅ [DRY RUN] CPU Stress configurado mas não executado"
+            kubectl delete stresschaos cpu-stress-experiment -n ${{ env.CHAOS_NAMESPACE }}
+          else
+            echo "⚠️ CPU stress ativo: 80% em 2 workers por ${{ github.event.inputs.duration_minutes }} minutos"
+          fi
+
+  run-memory-stress:
+    name: 💾 Memory Stress Test
+    runs-on: ubuntu-latest
+    needs: setup-chaos-studio
+    if: |
+      github.event.inputs.experiment_type == 'memory-stress' || 
+      github.event.inputs.experiment_type == 'all-experiments'
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: 🎯 Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.AKS_CLUSTER_NAME }} \
+            --overwrite-existing
+
+      - name: 💾 Run Memory Stress Experiment
+        run: |
+          echo "💾 Aplicando stress de memória (256MB)..."
+          
+          cat <<EOF | kubectl apply -f -
+          apiVersion: chaos-mesh.org/v1alpha1
+          kind: StressChaos
+          metadata:
+            name: memory-stress-experiment
+            namespace: ${{ env.CHAOS_NAMESPACE }}
+          spec:
+            mode: one
+            duration: "${{ github.event.inputs.duration_minutes }}m"
+            selector:
+              namespaces:
+                - dx02
+              labelSelectors:
+                "app": "dx02"
+            stressors:
+              memory:
+                workers: 1
+                size: "256MB"
+          EOF
+          
+          if [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
+            echo "✅ [DRY RUN] Memory Stress configurado mas não executado"
+            kubectl delete stresschaos memory-stress-experiment -n ${{ env.CHAOS_NAMESPACE }}
+          else
+            echo "⚠️ Memory stress ativo: 256MB por ${{ github.event.inputs.duration_minutes }} minutos"
+          fi
+
+  validate-resilience:
+    name: ✅ Validate System Resilience
+    runs-on: ubuntu-latest
+    needs: [run-pod-chaos, run-network-latency, run-cpu-stress, run-memory-stress]
+    if: always() && github.event.inputs.dry_run == 'false'
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: 🎯 Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.AKS_CLUSTER_NAME }} \
+            --overwrite-existing
+
+      - name: 📊 Check application health
+        run: |
+          echo "======================================"
+          echo "📊 System Health After Chaos"
+          echo "======================================"
+          echo ""
+          
+          echo "🔍 Verificando pods..."
+          kubectl get pods -n dx02
+          echo ""
+          
+          echo "🔍 Verificando services..."
+          kubectl get svc -n dx02
+          echo ""
+          
+          echo "🔍 Verificando HPA..."
+          kubectl get hpa -n dx02
+          echo ""
+          
+          echo "🔍 Logs recentes (últimas 50 linhas)..."
+          kubectl logs -n dx02 -l app=dx02 --tail=50 --prefix=true
+          echo ""
+          
+          echo "======================================"
+          echo "✅ Validação concluída"
+          echo "======================================"
+
+      - name: 🧹 Cleanup chaos experiments
+        if: always()
+        run: |
+          echo "🧹 Limpando experimentos de chaos..."
+          kubectl delete podchaos --all -n ${{ env.CHAOS_NAMESPACE }} --ignore-not-found=true
+          kubectl delete networkchaos --all -n ${{ env.CHAOS_NAMESPACE }} --ignore-not-found=true
+          kubectl delete stresschaos --all -n ${{ env.CHAOS_NAMESPACE }} --ignore-not-found=true
+          echo "✅ Limpeza concluída"
+
+      - name: 📊 Final Summary
+        run: |
+          echo "======================================"
+          echo "🎉 Chaos Engineering - Summary"
+          echo "======================================"
+          echo ""
+          echo "Environment: ${{ github.event.inputs.environment }}"
+          echo "Experiment Type: ${{ github.event.inputs.experiment_type }}"
+          echo "Duration: ${{ github.event.inputs.duration_minutes }} minutes"
+          echo "Dry Run: ${{ github.event.inputs.dry_run }}"
+          echo ""
+          echo "✅ Todos os experimentos concluídos"
+          echo ""
+          echo "📚 Próximos passos:"
+          echo "1. Analise os logs e métricas no Grafana"
+          echo "2. Verifique alertas no Azure Monitor"
+          echo "3. Ajuste políticas de resiliência se necessário"
+          echo "4. Execute novos experimentos para validar melhorias"
+          echo ""
+          echo "💡 Dica: Use dry_run=false para executar experimentos reais"

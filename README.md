@@ -687,6 +687,7 @@ Veja [TROUBLESHOOTING.md](TROUBLESHOOTING.md) para mais detalhes.
 - [ARGOCD.md](ARGOCD.md) - 🚀 GitOps com ArgoCD para continuous delivery
 - [SERVICE_MESH.md](SERVICE_MESH.md) - 🕸️ Azure Service Mesh (Istio) para traffic management e segurança
 - [SECURITY_SCANNING_IAC_DAST.md](SECURITY_SCANNING_IAC_DAST.md) - 🔒 Security scanning IaC (tfsec/Checkov/Gitleaks) e DAST (OWASP ZAP)
+- [CHAOS_ENGINEERING.md](CHAOS_ENGINEERING.md) - 🔥 Chaos Engineering com Azure Chaos Studio e Chaos Mesh
 
 ---
 
@@ -708,12 +709,12 @@ Veja [TROUBLESHOOTING.md](TROUBLESHOOTING.md) para mais detalhes.
 - [x] **✅ Service Mesh**: Azure Service Mesh (Istio) com mTLS PERMISSIVE e traffic management
 - [x] **✅ Certificate Management**: cert-manager v1.14 com Let's Encrypt para HTTPS automático
 - [x] **✅ WAF (Web Application Firewall)**: Azure Application Gateway WAF_v2 com proteção OWASP Top 10
+- [x] **✅ Chaos Engineering**: Azure Chaos Studio + Chaos Mesh implementado para testes de resiliência
 - [ ] **Blue/Green Deployment**: Implementar estratégia de deploy avançada no AKS
 - [ ] **Disaster Recovery**: Expandir para multi-region com failover automático
 - [ ] **Cost Optimization**: Implementar Azure Cost Management automation e budget alerts
 - [x] **✅ Security Scanning - IaC**: tfsec/Checkov para Terraform, Gitleaks para secrets
 - [x] **✅ Security Scanning - DAST**: OWASP ZAP implementado para testes dinâmicos
-- [ ] **Chaos Engineering**: Implementar Azure Chaos Studio para testes de resiliência
 
 ---
 
