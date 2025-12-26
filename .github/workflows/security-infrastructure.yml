@@ -260,55 +260,34 @@ jobs:
             echo "✅ Subnet created"
           fi
 
-      - name: 🌐 Get or Create Public IP for Application Gateway
+      - name: 🌐 Create Public IP for Application Gateway
         id: get-ip
+        if: steps.check-appgw.outputs.exists == 'false'
         run: |
-          echo "🔍 Getting Public IP for Application Gateway..."
+          echo "🌐 Creating Public IP for Application Gateway..."
           
-          # Try to get IP from Nginx Ingress Controller
-          INGRESS_IP=$(kubectl get svc -n ingress-nginx ingress-nginx-controller \
-            -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+          # Create new Public IP for Application Gateway
+          az network public-ip create \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.APP_GATEWAY_NAME }}-pip \
+            --location ${{ env.LOCATION }} \
+            --allocation-method Static \
+            --sku Standard \
+            --tags Environment=${{ github.event.inputs.environment }} ManagedBy=GitHub-Actions
           
-          if [ -z "$INGRESS_IP" ]; then
-            echo "⚠️  No Nginx Ingress IP found, will create new Public IP"
-            
-            # Create new Public IP for Application Gateway
-            az network public-ip create \
-              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-              --name ${{ env.APP_GATEWAY_NAME }}-pip \
-              --location ${{ env.LOCATION }} \
-              --allocation-method Static \
-              --sku Standard \
-              --tags Environment=${{ github.event.inputs.environment }} ManagedBy=GitHub-Actions
-            
-            IP_ADDRESS=$(az network public-ip show \
-              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-              --name ${{ env.APP_GATEWAY_NAME }}-pip \
-              --query ipAddress -o tsv)
-            IP_NAME="${{ env.APP_GATEWAY_NAME }}-pip"
-            IP_RG="${{ env.AZURE_RESOURCE_GROUP }}"
-          else
-            echo "✅ Found Nginx Ingress IP: $INGRESS_IP"
-            
-            # Find the Public IP resource in Azure
-            IP_RESOURCES=$(az network public-ip list \
-              --query "[?ipAddress=='$INGRESS_IP'].{name:name,rg:resourceGroup}" -o json)
-            
-            IP_NAME=$(echo $IP_RESOURCES | jq -r '.[0].name')
-            IP_RG=$(echo $IP_RESOURCES | jq -r '.[0].rg')
-            IP_ADDRESS=$INGRESS_IP
-          fi
+          IP_ADDRESS=$(az network public-ip show \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.APP_GATEWAY_NAME }}-pip \
+            --query ipAddress -o tsv)
           
           echo "ip_address=$IP_ADDRESS" >> $GITHUB_OUTPUT
-          echo "ip_name=$IP_NAME" >> $GITHUB_OUTPUT
-          echo "ip_resource_group=$IP_RG" >> $GITHUB_OUTPUT
+          echo "ip_name=${{ env.APP_GATEWAY_NAME }}-pip" >> $GITHUB_OUTPUT
           
-          echo "✅ Public IP configured:"
-          echo "   Name: $IP_NAME"
+          echo "✅ Public IP created:"
+          echo "   Name: ${{ env.APP_GATEWAY_NAME }}-pip"
           echo "   IP: $IP_ADDRESS"
-          echo "   Resource Group: $IP_RG"
           echo ""
-          echo "⚠️  Configure your DNS to point to: $IP_ADDRESS"
+          echo "⚠️  IMPORTANTE: Atualize seu DNS dx02.ddns.net para este novo IP: $IP_ADDRESS"
 
       - name: 🛡️ Create WAF Policy (before Application Gateway)
         if: steps.check-appgw.outputs.exists == 'false' && github.event.inputs.app_gateway_sku == 'WAF_v2'
@@ -346,14 +325,13 @@ jobs:
             --name ${{ env.APP_GATEWAY_SUBNET }} \
             --query id -o tsv)
           
-          # Use Public IP from previous step
+          # Use Public IP created in previous step
           echo "🔗 Using Public IP: ${{ steps.get-ip.outputs.ip_address }}"
           PUBLIC_IP_NAME="${{ steps.get-ip.outputs.ip_name }}"
-          PUBLIC_IP_RG="${{ steps.get-ip.outputs.ip_resource_group }}"
           
           # Get Public IP ID
           PUBLIC_IP_ID=$(az network public-ip show \
-            --resource-group $PUBLIC_IP_RG \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --name $PUBLIC_IP_NAME \
             --query id -o tsv)
           
@@ -451,11 +429,15 @@ jobs:
             -o table
           echo ""
           
-          echo "🌐 Public IP (reused from AKS):"
-          echo "IP Address: ${{ steps.get-ip.outputs.ip_address }}"
+          echo "🌐 Public IP (novo):"
+          APPGW_IP=$(az network public-ip show \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.APP_GATEWAY_NAME }}-pip \
+            --query ipAddress -o tsv)
+          echo "IP Address: $APPGW_IP"
           echo ""
-          echo "⚠️  IMPORTANT: Configure your DNS to point to this IP!"
-          echo "   Example (no-ip.com): dx02.no-ip.org → ${{ steps.get-ip.outputs.ip_address }}"
+          echo "⚠️  IMPORTANTE: Atualize seu DNS!"
+          echo "   dx02.ddns.net → $APPGW_IP"
           echo ""
           
           echo "🛡️ WAF Policy:"
