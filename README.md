@@ -139,14 +139,22 @@ O free tier oferece um botão "Apply offer" que não pode ser automatizado via T
   - Require labels para rastreabilidade
 - ✅ **SonarCloud** - Code quality e security analysis
 - ✅ **GitHub Security** - Dependabot e code scanning habilitados
-- ✅ **Service Mesh (Istio)** - mTLS automático para comunicação service-to-service
+- ✅ **cert-manager** - Gerenciamento automático de certificados SSL/TLS com Let's Encrypt
+- ✅ **WAF (Web Application Firewall)** - Azure Application Gateway v2 com proteção OWASP Top 10
 
 ### 🕸️ **Service Mesh**
 - ✅ **Istio** - Azure Service Mesh integrado ao AKS
-- ✅ **mTLS Strict** - Criptografia automática entre serviços
+- ✅ **mTLS PERMISSIVE** - Criptografia automática entre serviços com suporte a Ingress externo
 - ✅ **Traffic Management** - Canary, circuit breakers, retries
-- ✅ **Ingress Gateway** - LoadBalancer com roteamento avançado
+- ✅ **Gateway & VirtualService** - Roteamento avançado com Istio
 - ✅ **Telemetry** - Métricas e tracing integrados com Prometheus/Azure Monitor
+
+### 🛡️ **Security Infrastructure**
+- ✅ **cert-manager v1.14** - Renovação automática de certificados SSL
+- ✅ **Let's Encrypt** - Certificados gratuitos (staging + production)
+- ✅ **Azure Application Gateway** - WAF_v2 com AGIC
+- ✅ **WAF Detection Mode** - Análise de ataques sem bloqueio (para tuning inicial)
+- ✅ **HTTPS Automation** - SSL/TLS end-to-end automático
 
 ### 🎯 **Desafios Superados**
 - ✅ PostgreSQL → Azure SQL Database migration (Free Trial restriction)
@@ -173,6 +181,7 @@ O free tier oferece um botão "Apply offer" que não pode ser automatizado via T
 - 🔒 **Segurança:**
   - [SECURITY_SCANNING.md](SECURITY_SCANNING.md) - Trivy e OPA Gatekeeper
   - [k8s/policies/README.md](k8s/policies/README.md) - Políticas do Gatekeeper
+  - [**SECURITY_INFRASTRUCTURE.md**](SECURITY_INFRASTRUCTURE.md) - **cert-manager + WAF com Azure Application Gateway**
 - 🕸️ **Service Mesh:**
   - [SERVICE_MESH.md](SERVICE_MESH.md) - Azure Service Mesh (Istio) com mTLS e traffic management
 
@@ -689,15 +698,15 @@ Veja [TROUBLESHOOTING.md](TROUBLESHOOTING.md) para mais detalhes.
 - [x] **✅ Logs Centralizados**: Azure Log Analytics implementado com Container Insights
 - [x] **✅ APM (Application Performance Monitoring)**: Azure Application Insights configurado
 - [x] **✅ GitOps**: ArgoCD implementado para continuous delivery
-- [x] **✅ Service Mesh**: Azure Service Mesh (Istio) implementado com mTLS, telemetry e ingress gateway
+- [x] **✅ Service Mesh**: Azure Service Mesh (Istio) com mTLS PERMISSIVE e traffic management
+- [x] **✅ Certificate Management**: cert-manager v1.14 com Let's Encrypt para HTTPS automático
+- [x] **✅ WAF (Web Application Firewall)**: Azure Application Gateway WAF_v2 com proteção OWASP Top 10
 - [ ] **Blue/Green Deployment**: Implementar estratégia de deploy avançada no AKS
 - [ ] **Disaster Recovery**: Expandir para multi-region com failover automático
 - [ ] **Cost Optimization**: Implementar Azure Cost Management automation e budget alerts
 - [x] **✅ Security Scanning - IaC**: tfsec/Checkov para Terraform, Gitleaks para secrets
 - [x] **✅ Security Scanning - DAST**: OWASP ZAP implementado para testes dinâmicos
 - [ ] **Chaos Engineering**: Implementar Azure Chaos Studio para testes de resiliência
-- [ ] **Certificate Management**: Integrar cert-manager com Let's Encrypt para HTTPS automático
-- [ ] **WAF (Web Application Firewall)**: Adicionar Azure Application Gateway com WAF
 
 ---
 
