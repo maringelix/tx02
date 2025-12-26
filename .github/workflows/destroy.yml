@@ -245,7 +245,7 @@ jobs:
           ARM_ACCESS_KEY: ${{ secrets.AZURE_STORAGE_ACCESS_KEY }}
       
       - name: Terraform Destroy
-        run: terraform destroy -auto-approve -var-file="test.auto.tfvars"
+        run: terraform destroy -auto-approve
         working-directory: terraform/${{ github.event.inputs.environment }}
         env:
           ARM_CLIENT_ID: ${{ steps.azure-creds.outputs.CLIENT_ID }}
@@ -253,8 +253,31 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ steps.azure-creds.outputs.SUBSCRIPTION_ID }}
           ARM_TENANT_ID: ${{ steps.azure-creds.outputs.TENANT_ID }}
           ARM_ACCESS_KEY: ${{ secrets.AZURE_STORAGE_ACCESS_KEY }}
+          TF_VAR_project_name: tx02
+          TF_VAR_environment: ${{ github.event.inputs.environment }}
+          TF_VAR_location: eastus
+          TF_VAR_vnet_address_space: '["10.0.0.0/16"]'
+          TF_VAR_subnet_aks: 10.0.1.0/24
+          TF_VAR_subnet_database: 10.0.2.0/24
+          TF_VAR_subnet_vm: 10.0.3.0/24
+          TF_VAR_subnet_appgw: 10.0.4.0/24
+          TF_VAR_use_aks: true
+          TF_VAR_aks_node_count: 2
+          TF_VAR_aks_min_count: 2
+          TF_VAR_aks_max_count: 10
+          TF_VAR_aks_node_size: Standard_D2s_v3
+          TF_VAR_kubernetes_version: "1.32"
+          TF_VAR_db_sku_name: Basic
+          TF_VAR_db_storage_gb: 2
+          TF_VAR_db_version: "17"
+          TF_VAR_db_admin_username: dx02admin
+          TF_VAR_db_name: dx02_db
           TF_VAR_db_password: ${{ secrets.TF_VAR_db_password }}
+          TF_VAR_vm_size: Standard_D2s_v3
+          TF_VAR_vm_admin_username: azureuser
           TF_VAR_vm_admin_password: ${{ secrets.TF_VAR_admin_password }}
+          TF_VAR_acr_sku: Basic
+          TF_VAR_tags: '{"Project":"TX02","Environment":"Production","ManagedBy":"Terraform"}'
       
       - name: Cleanup AKS Managed Resource Group
         continue-on-error: true
