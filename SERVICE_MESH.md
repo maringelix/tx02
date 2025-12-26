@@ -30,6 +30,7 @@ Documentação completa sobre a implementação e uso do **Azure Service Mesh** 
 - [Configuração](#-configuração)
 - [Traffic Management](#-traffic-management)
 - [Segurança](#-segurança)
+- [Integração com cert-manager e HTTPS](#-integração-com-cert-manager-e-https)
 - [Observabilidade](#-observabilidade)
 - [Troubleshooting](#-troubleshooting)
 - [Best Practices](#-best-practices)
@@ -117,7 +118,7 @@ O **Istiod** é o cérebro do Service Mesh:
 
 ### 🔒 Segurança
 
-- [x] **mTLS Strict Mode** - Comunicação criptografada obrigatória
+- [x] **mTLS PERMISSIVE Mode** - Comunicação criptografada entre pods + permite Ingress externo
 - [x] **PeerAuthentication** - Políticas de autenticação por namespace
 - [x] **Service Accounts** - Identidades para cada serviço
 - [x] **RBAC** - Controle de acesso granular
@@ -215,19 +216,21 @@ kubectl label namespace dx02 istio-injection=enabled
 kubectl get namespaces -L istio-injection
 ```
 
-### 2. Configurar mTLS Strict
+### 2. Configurar mTLS (PERMISSIVE para Ingress externo)
 
 ```yaml
-# mtls-strict.yaml
+# mtls-permissive.yaml
 apiVersion: security.istio.io/v1beta1
 kind: PeerAuthentication
 metadata:
-  name: default-mtls-strict
+  name: default-mtls-permissive
   namespace: dx02
 spec:
   mtls:
-    mode: STRICT
+    mode: PERMISSIVE  # Permite Ingress externo + mTLS interno
 ```
+
+> 💡 **Nota**: Usamos PERMISSIVE para permitir tráfego do Nginx Ingress/Application Gateway (sem certificados mTLS) enquanto mantemos mTLS automático entre pods. Veja seção [Integração com cert-manager](#-integração-com-cert-manager-e-https) para detalhes.
 
 ```bash
 kubectl apply -f mtls-strict.yaml
@@ -638,14 +641,228 @@ kubectl exec -it <pod-name> -n dx02 -c istio-proxy -- \
 
 ---
 
-## 📚 Best Practices
+## � Integração com cert-manager e HTTPS
 
-### 1. **Sempre use mTLS Strict**
+### Diferença entre Certificados Istio mTLS e Let's Encrypt
+
+> ⚠️ **Importante:** São dois sistemas de certificados independentes que trabalham em camadas diferentes!
+
+| Aspecto | **Istio mTLS (SPIFFE)** | **cert-manager (Let's Encrypt)** |
+|---------|------------------------|----------------------------------|
+| **Propósito** | Autenticação mútua service-to-service | HTTPS público (TLS unilateral) |
+| **Camada** | Pod ↔ Pod (dentro do cluster) | Cliente ↔ Ingress/Gateway (externo) |
+| **Formato** | SPIFFE (X.509 com SAN SPIFFE URI) | X.509 standard (TLS/SSL) |
+| **Gerenciamento** | Automático pelo Istio | cert-manager com ACME protocol |
+| **Validade** | Curta (horas), renovação automática | 90 dias (Let's Encrypt) |
+| **Trust Root** | Istio CA (interno) | Let's Encrypt CA (público) |
+
+### Arquitetura de Segurança em Camadas
+
+```
+┌──────────────┐  HTTPS (cert-manager)    ┌─────────────────────┐
+│   Cliente    │ ───────────────────────> │ Application Gateway │
+│  (Browser)   │  Let's Encrypt cert      │ ou Nginx Ingress    │
+└──────────────┘  TLS unilateral          └─────────────────────┘
+                                                     │
+                                                     │ HTTP/HTTPS
+                                                     │ (plaintext ok)
+                                                     ▼
+                            ┌─────────────────────────────────────┐
+                            │ Istio Ingress Gateway (opcional)    │
+                            │ Aceita HTTP/HTTPS de Ingress        │
+                            └─────────────────────────────────────┘
+                                           │
+                                           │ mTLS PERMISSIVE
+                                           │ (aceita plaintext OU mTLS)
+                                           ▼
+                            ┌─────────────────────────────────────┐
+                            │ Pod (app + istio-proxy sidecar)     │
+                            │ Istio auto-gera certificados mTLS   │
+                            └─────────────────────────────────────┘
+                                           │
+                                           │ mTLS automático
+                                           │ (SPIFFE certs)
+                                           ▼
+                            ┌─────────────────────────────────────┐
+                            │ Outro Pod (istio-proxy)             │
+                            │ Valida certificado mTLS do source   │
+                            └─────────────────────────────────────┘
+```
+
+### Configuração Recomendada: mTLS PERMISSIVE
+
+**Por que PERMISSIVE em vez de STRICT?**
+
 ```yaml
-# Recomendado para produção
+# ✅ RECOMENDADO: Permite Ingress externo + mTLS interno
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default-mtls-permissive
+  namespace: dx02
+spec:
+  mtls:
+    mode: PERMISSIVE  # Aceita plaintext E mTLS
+```
+
+**Comportamento:**
+- ✅ **Ingress → Pod**: HTTP plaintext (sem certificados Istio) - OK
+- ✅ **Pod → Pod**: mTLS automático (Istio injeta certificados) - Seguro
+- ✅ **Cliente → Ingress**: HTTPS (cert-manager) - Seguro
+- ✅ **Flexibilidade**: Permite migração gradual e debugging
+
+### Opções de Configuração
+
+#### Opção 1: PERMISSIVE (Atual - Recomendado)
+```yaml
+# Melhor para: Ambientes híbridos, debugging, Nginx Ingress
+spec:
+  mtls:
+    mode: PERMISSIVE
+```
+
+**Prós:**
+- ✅ Compatível com Ingress Controller externo (Nginx, Application Gateway)
+- ✅ mTLS automático entre pods com sidecars
+- ✅ Fácil debugging (pode usar curl/wget direto)
+- ✅ Migração gradual de apps legadas
+
+**Contras:**
+- ⚠️ Permite plaintext se alguém esquecer de configurar mTLS
+- ⚠️ Menos "zero trust" puro
+
+#### Opção 2: STRICT (Máxima Segurança)
+```yaml
+# Melhor para: Ambientes altamente seguros, 100% mTLS
 spec:
   mtls:
     mode: STRICT
+```
+
+**Prós:**
+- ✅ Garante mTLS em TODAS as conexões
+- ✅ "Zero trust" verdadeiro
+- ✅ Compliance rigoroso
+
+**Contras:**
+- ❌ Requer Istio Gateway como ponto de entrada único
+- ❌ Nginx Ingress precisa de configuração especial ou remoção
+- ❌ Debugging mais complexo (precisa de certificados válidos)
+
+**Para usar STRICT, você precisaria:**
+1. Configurar Istio Gateway com certificados TLS (cert-manager)
+2. Remover ou reconfigurar Nginx Ingress para usar mTLS
+3. Atualizar todos os health checks para usar mTLS
+
+#### Opção 3: DISABLE (Não Recomendado)
+```yaml
+spec:
+  mtls:
+    mode: DISABLE
+```
+⚠️ **Apenas para desenvolvimento local** - remove todas as vantagens do Service Mesh!
+
+### Migração Futura para STRICT (Roadmap)
+
+Se quiser migrar para mTLS STRICT no futuro:
+
+```yaml
+# 1. Configure Istio Gateway com TLS
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: dx02-gateway-tls
+  namespace: dx02
+spec:
+  selector:
+    istio: aks-istio-ingressgateway-external
+  servers:
+  - port:
+      number: 443
+      name: https
+      protocol: HTTPS
+    tls:
+      mode: SIMPLE
+      credentialName: dx02-tls-cert  # Certificate do cert-manager
+    hosts:
+    - "dx02.example.com"
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "dx02.example.com"
+    tls:
+      httpsRedirect: true  # Redireciona HTTP → HTTPS
+---
+# 2. Crie Secret com certificado do cert-manager
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dx02-tls-cert
+  namespace: aks-istio-ingress
+type: kubernetes.io/tls
+data:
+  tls.crt: <base64-cert>
+  tls.key: <base64-key>
+---
+# 3. DEPOIS que tudo funcionar com Gateway, mude para STRICT
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default-mtls-strict
+  namespace: dx02
+spec:
+  mtls:
+    mode: STRICT  # Agora exige mTLS em tudo
+```
+
+### Verificação de Segurança
+
+```bash
+# 1. Verificar modo mTLS atual
+kubectl get peerauthentication -n dx02 -o yaml
+
+# 2. Verificar certificados Istio (mTLS interno)
+kubectl exec -it <pod-name> -n dx02 -c istio-proxy -- \
+  openssl s_client -connect dx02-service:5000 -showcerts
+
+# 3. Verificar certificado Let's Encrypt (HTTPS externo)
+openssl s_client -connect dx02.example.com:443 -showcerts | \
+  openssl x509 -noout -issuer -subject
+
+# 4. Verificar se mTLS está funcionando entre pods
+kubectl exec -it <pod-name> -n dx02 -c istio-proxy -- \
+  curl -v http://dx02-service:5000
+
+# Procure por headers:
+# x-envoy-peer-certificate: presente = mTLS funcionando
+# x-envoy-upstream-service-time: presente = Service Mesh ativo
+```
+
+### Resumo: Qual Usar?
+
+| Cenário | Modo Recomendado |
+|---------|------------------|
+| **Produção com Nginx Ingress** | PERMISSIVE (atual) |
+| **Migração gradual para Service Mesh** | PERMISSIVE |
+| **Ambiente altamente regulado** | STRICT (requer config adicional) |
+| **Debugging problemas** | PERMISSIVE |
+| **100% microservices internos** | STRICT |
+| **Apps legadas sem sidecars** | PERMISSIVE |
+
+**Nossa configuração atual está CORRETA**: PERMISSIVE permite HTTPS público via cert-manager + mTLS interno automático! 🎯
+
+---
+
+## 📚 Best Practices
+
+### 1. **Use mTLS PERMISSIVE inicialmente**
+```yaml
+# Recomendado para produção com Ingress externo
+spec:
+  mtls:
+    mode: PERMISSIVE  # Migre para STRICT quando tudo estiver estável
 ```
 
 ### 2. **Configure Timeouts e Retries**
