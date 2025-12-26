@@ -245,7 +245,7 @@ jobs:
           ARM_ACCESS_KEY: ${{ secrets.AZURE_STORAGE_ACCESS_KEY }}
       
       - name: Terraform Destroy
-        run: terraform destroy -auto-approve
+        run: terraform destroy -auto-approve -var-file="test.auto.tfvars"
         working-directory: terraform/${{ github.event.inputs.environment }}
         env:
           ARM_CLIENT_ID: ${{ steps.azure-creds.outputs.CLIENT_ID }}
