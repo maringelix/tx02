@@ -90,7 +90,7 @@ jobs:
 
       - name: 📦 Install Chaos Mesh
         run: |
-          echo "📦 Instalando Chaos Mesh no cluster..."
+          echo "📦 Installing Chaos Mesh on cluster..."
           
           # Add Chaos Mesh Helm repository
           helm repo add chaos-mesh https://charts.chaos-mesh.org
@@ -101,7 +101,7 @@ jobs:
           
           # Check if Chaos Mesh is already installed
           if helm list -n ${{ env.CHAOS_NAMESPACE }} | grep -q "chaos-mesh"; then
-            echo "⚠️ Chaos Mesh já está instalado, atualizando..."
+            echo "⚠️ Chaos Mesh already installed, upgrading..."
             helm upgrade chaos-mesh chaos-mesh/chaos-mesh \
               --namespace ${{ env.CHAOS_NAMESPACE }} \
               --version 2.6.3 \
@@ -110,7 +110,7 @@ jobs:
               --set dashboard.create=true \
               --set dashboard.securityMode=false
           else
-            echo "📦 Instalando Chaos Mesh..."
+            echo "📦 Installing Chaos Mesh..."
             helm install chaos-mesh chaos-mesh/chaos-mesh \
               --namespace ${{ env.CHAOS_NAMESPACE }} \
               --version 2.6.3 \
@@ -120,16 +120,16 @@ jobs:
               --set dashboard.securityMode=false
           fi
           
-          echo "✅ Chaos Mesh instalado"
+          echo "✅ Chaos Mesh installed"
 
       - name: ⏳ Wait for Chaos Mesh to be ready
         run: |
-          echo "⏳ Aguardando Chaos Mesh ficar pronto..."
+          echo "⏳ Waiting for Chaos Mesh to be ready..."
           kubectl wait --for=condition=Ready pods -l app.kubernetes.io/component=controller-manager \
             -n ${{ env.CHAOS_NAMESPACE }} \
             --timeout=300s
           
-          echo "✅ Chaos Mesh está pronto"
+          echo "✅ Chaos Mesh is ready"
 
       - name: 📊 Display Chaos Mesh status
         run: |
@@ -170,7 +170,7 @@ jobs:
 
       - name: 🎲 Run Pod Chaos Experiment
         run: |
-          echo "🎲 Executando Pod Chaos (Kill Random Pod)..."
+          echo "🎲 Running Pod Chaos (Kill Random Pod)..."
           
           cat <<EOF | kubectl apply -f -
           apiVersion: chaos-mesh.org/v1alpha1
@@ -187,29 +187,27 @@ jobs:
                 - dx02
               labelSelectors:
                 "app": "dx02"
-            scheduler:
-              cron: "@every 2m"
           EOF
           
           if [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
-            echo "✅ [DRY RUN] Pod Chaos configurado mas não executado"
+            echo "✅ [DRY RUN] Pod Chaos configured but not executed"
             kubectl delete podchaos pod-kill-experiment -n ${{ env.CHAOS_NAMESPACE }}
           else
-            echo "⚠️ Experimento de Chaos ATIVO por ${{ github.event.inputs.duration_minutes }} minutos"
-            echo "🔥 Pods serão mortos a cada 2 minutos"
+            echo "⚠️ Chaos experiment ACTIVE for ${{ github.event.inputs.duration_minutes }} minutes"
+            echo "🔥 Pods will be killed randomly during the duration"
           fi
 
       - name: 📊 Monitor experiment (if not dry run)
         if: github.event.inputs.dry_run == 'false'
         run: |
-          echo "📊 Monitorando experimento..."
+          echo "📊 Monitoring experiment..."
           sleep 30
           
-          echo "Pods no namespace dx02:"
+          echo "Pods in namespace dx02:"
           kubectl get pods -n dx02
           
           echo ""
-          echo "Chaos experiments ativos:"
+          echo "Active chaos experiments:"
           kubectl get podchaos -n ${{ env.CHAOS_NAMESPACE }}
 
   run-network-latency:
@@ -238,7 +236,7 @@ jobs:
 
       - name: 🌐 Run Network Latency Experiment
         run: |
-          echo "🌐 Injetando latência na rede (200ms)..."
+          echo "🌐 Injecting network latency (200ms)..."
           
           cat <<EOF | kubectl apply -f -
           apiVersion: chaos-mesh.org/v1alpha1
@@ -262,10 +260,10 @@ jobs:
           EOF
           
           if [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
-            echo "✅ [DRY RUN] Network Latency configurado mas não executado"
+            echo "✅ [DRY RUN] Network Latency configured but not executed"
             kubectl delete networkchaos network-latency-experiment -n ${{ env.CHAOS_NAMESPACE }}
           else
-            echo "⚠️ Latência de rede injetada: 200ms ± 50ms por ${{ github.event.inputs.duration_minutes }} minutos"
+            echo "⚠️ Network latency injected: 200ms ± 50ms for ${{ github.event.inputs.duration_minutes }} minutes"
           fi
 
   run-cpu-stress:
@@ -294,7 +292,7 @@ jobs:
 
       - name: 🔥 Run CPU Stress Experiment
         run: |
-          echo "🔥 Aplicando stress de CPU (80%)..."
+          echo "🔥 Applying CPU stress (80%)..."
           
           cat <<EOF | kubectl apply -f -
           apiVersion: chaos-mesh.org/v1alpha1
@@ -317,10 +315,10 @@ jobs:
           EOF
           
           if [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
-            echo "✅ [DRY RUN] CPU Stress configurado mas não executado"
+            echo "✅ [DRY RUN] CPU Stress configured but not executed"
             kubectl delete stresschaos cpu-stress-experiment -n ${{ env.CHAOS_NAMESPACE }}
           else
-            echo "⚠️ CPU stress ativo: 80% em 2 workers por ${{ github.event.inputs.duration_minutes }} minutos"
+            echo "⚠️ CPU stress active: 80% on 2 workers for ${{ github.event.inputs.duration_minutes }} minutes"
           fi
 
   run-memory-stress:
@@ -349,7 +347,7 @@ jobs:
 
       - name: 💾 Run Memory Stress Experiment
         run: |
-          echo "💾 Aplicando stress de memória (256MB)..."
+          echo "💾 Applying memory stress (256MB)..."
           
           cat <<EOF | kubectl apply -f -
           apiVersion: chaos-mesh.org/v1alpha1
@@ -372,10 +370,10 @@ jobs:
           EOF
           
           if [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
-            echo "✅ [DRY RUN] Memory Stress configurado mas não executado"
+            echo "✅ [DRY RUN] Memory Stress configured but not executed"
             kubectl delete stresschaos memory-stress-experiment -n ${{ env.CHAOS_NAMESPACE }}
           else
-            echo "⚠️ Memory stress ativo: 256MB por ${{ github.event.inputs.duration_minutes }} minutos"
+            echo "⚠️ Memory stress active: 256MB for ${{ github.event.inputs.duration_minutes }} minutes"
           fi
 
   validate-resilience:
@@ -407,34 +405,34 @@ jobs:
           echo "======================================"
           echo ""
           
-          echo "🔍 Verificando pods..."
+          echo "🔍 Checking pods..."
           kubectl get pods -n dx02
           echo ""
           
-          echo "🔍 Verificando services..."
+          echo "🔍 Checking services..."
           kubectl get svc -n dx02
           echo ""
           
-          echo "🔍 Verificando HPA..."
+          echo "🔍 Checking HPA..."
           kubectl get hpa -n dx02
           echo ""
           
-          echo "🔍 Logs recentes (últimas 50 linhas)..."
+          echo "🔍 Recent logs (last 50 lines)..."
           kubectl logs -n dx02 -l app=dx02 --tail=50 --prefix=true
           echo ""
           
           echo "======================================"
-          echo "✅ Validação concluída"
+          echo "✅ Validation completed"
           echo "======================================"
 
       - name: 🧹 Cleanup chaos experiments
         if: always()
         run: |
-          echo "🧹 Limpando experimentos de chaos..."
+          echo "🧹 Cleaning up chaos experiments..."
           kubectl delete podchaos --all -n ${{ env.CHAOS_NAMESPACE }} --ignore-not-found=true
           kubectl delete networkchaos --all -n ${{ env.CHAOS_NAMESPACE }} --ignore-not-found=true
           kubectl delete stresschaos --all -n ${{ env.CHAOS_NAMESPACE }} --ignore-not-found=true
-          echo "✅ Limpeza concluída"
+          echo "✅ Cleanup completed"
 
       - name: 📊 Final Summary
         run: |
@@ -447,12 +445,12 @@ jobs:
           echo "Duration: ${{ github.event.inputs.duration_minutes }} minutes"
           echo "Dry Run: ${{ github.event.inputs.dry_run }}"
           echo ""
-          echo "✅ Todos os experimentos concluídos"
+          echo "✅ All experiments completed"
           echo ""
-          echo "📚 Próximos passos:"
-          echo "1. Analise os logs e métricas no Grafana"
-          echo "2. Verifique alertas no Azure Monitor"
-          echo "3. Ajuste políticas de resiliência se necessário"
-          echo "4. Execute novos experimentos para validar melhorias"
+          echo "📚 Next steps:"
+          echo "1. Analyze logs and metrics in Grafana"
+          echo "2. Check alerts in Azure Monitor"
+          echo "3. Adjust resilience policies if needed"
+          echo "4. Run new experiments to validate improvements"
           echo ""
-          echo "💡 Dica: Use dry_run=false para executar experimentos reais"
+          echo "💡 Tip: Use dry_run=false to execute real experiments"
