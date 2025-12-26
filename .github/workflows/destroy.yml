@@ -256,6 +256,28 @@ jobs:
           TF_VAR_db_password: ${{ secrets.TF_VAR_db_password }}
           TF_VAR_vm_admin_password: ${{ secrets.TF_VAR_admin_password }}
       
+      - name: Cleanup AKS Managed Resource Group
+        continue-on-error: true
+        run: |
+          echo "🧹 Cleaning up AKS managed resource group..."
+          
+          AKS_MC_RG="MC_tx02-${{ github.event.inputs.environment }}-rg_tx02-${{ github.event.inputs.environment }}-aks_eastus"
+          
+          if az group show --name "$AKS_MC_RG" &>/dev/null; then
+            echo "⚠️ AKS managed resource group still exists, forcing deletion..."
+            
+            # Delete all resources in the managed RG first
+            az resource list --resource-group "$AKS_MC_RG" --query "[].id" -o tsv | \
+              xargs -I {} az resource delete --ids {} --verbose || true
+            
+            # Then delete the resource group
+            az group delete --name "$AKS_MC_RG" --yes --no-wait
+            
+            echo "✅ AKS managed resource group cleanup initiated"
+          else
+            echo "✅ AKS managed resource group already deleted"
+          fi
+      
       - name: Verify Destruction
         run: |
           echo "🔍 Verifying resource destruction..."
@@ -265,6 +287,11 @@ jobs:
           else
             echo "✅ Resource Group successfully destroyed"
           fi
+          
+          # Check all resource groups
+          echo ""
+          echo "📋 Remaining resource groups:"
+          az group list --query "[].name" -o table
       
       - name: Summary
         run: |
@@ -272,6 +299,25 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
           echo "**Destroyed at:** $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🗑️ Destroyed Resources:" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ AKS Cluster" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Azure Container Registry" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Virtual Network & Subnets" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Network Security Groups" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ SQL Server & Database" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Application Gateway & WAF" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Application Insights" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Log Analytics Workspace" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ All Public IPs" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Disk Snapshots" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ SQL LTR Backups" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Preserved Resources:" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔒 Terraform Backend (tfstatetx02)" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔒 terraform-state-rg" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "💡 **You can rebuild infrastructure anytime using the terraform-apply workflow**" >> $GITHUB_STEP_SUMMARY
 
   destroy-bootstrap:
     name: 🔥 Destroy Terraform Backend
