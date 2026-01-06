@@ -74,12 +74,10 @@ jobs:
       
       - name: Clean up old resources
         run: |
-          # Force delete deployment to start fresh
-          kubectl delete deployment dx02 -n dx02 --ignore-not-found=true
-          kubectl delete replicaset -n dx02 --all || true
-          kubectl delete hpa -n dx02 --all || true
+          # Force delete ALL resources in namespace to start completely fresh
+          kubectl delete all --all -n dx02 || true
           # Give time for cleanup
-          sleep 10
+          sleep 15
       
       - name: Deploy Kubernetes manifests
         run: |
