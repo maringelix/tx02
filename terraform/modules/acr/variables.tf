@@ -30,12 +30,6 @@ variable "admin_enabled" {
   default     = true
 }
 
-variable "aks_principal_id" {
-  description = "AKS kubelet identity principal ID for ACR pull role"
-  type        = string
-  default     = null
-}
-
 variable "tags" {
   description = "Resource tags"
   type        = map(string)

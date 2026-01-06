@@ -12,16 +12,3 @@ resource "azurerm_container_registry" "main" {
 
   tags = var.tags
 }
-
-# Role assignment for AKS to pull images from ACR
-resource "azurerm_role_assignment" "aks_acr_pull" {
-  count                = var.aks_principal_id != null ? 1 : 0
-  principal_id         = var.aks_principal_id
-  role_definition_name = "AcrPull"
-  scope                = azurerm_container_registry.main.id
-  skip_service_principal_aad_check = true
-
-  lifecycle {
-    ignore_changes = [skip_service_principal_aad_check]
-  }
-}
