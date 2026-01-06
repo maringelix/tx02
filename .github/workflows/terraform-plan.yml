@@ -81,7 +81,7 @@ jobs:
             -var="subnet_database=10.0.2.0/24" \
             -var="subnet_vm=10.0.3.0/24" \
             -var="subnet_appgw=10.0.4.0/24" \
-            -var="use_aks=false" \
+            -var="use_aks=true" \
             -var="aks_node_count=2" \
             -var="aks_min_count=2" \
             -var="aks_max_count=10" \
@@ -90,7 +90,7 @@ jobs:
             -var="tags={}" \
           -var="db_sku_name=Basic" \
           -var="db_storage_gb=2" \
-          -var="db_version=12.0" \
+          -var="db_version=17" \
             -var="db_admin_username=tx02" \
             -var="db_name=tx02-prd-db" \
             -var="vm_size=Standard_D2s_v3" \
