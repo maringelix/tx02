@@ -71,6 +71,21 @@ jobs:
         run: |
           kubectl apply -f k8s/ -n dx02
       
+      - name: Debug - Check pods and events
+        if: always()
+        run: |
+          echo "=== Pods Status ==="
+          kubectl get pods -n dx02
+          echo ""
+          echo "=== Deployment Status ==="
+          kubectl get deployment dx02 -n dx02
+          echo ""
+          echo "=== Recent Events ==="
+          kubectl get events -n dx02 --sort-by='.lastTimestamp' | tail -20
+          echo ""
+          echo "=== Pod Describe (if exists) ==="
+          kubectl describe pods -n dx02 | head -100 || true
+      
       - name: Wait for deployment
         run: |
           kubectl rollout status deployment/dx02 -n dx02 --timeout=5m
