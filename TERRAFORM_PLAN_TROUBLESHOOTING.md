@@ -9,6 +9,29 @@ Este documento detalha todos os problemas encontrados durante a configuração d
 
 ---
 
+## Atualização 2026-01-06: Falha por AADSTS7000215 (Invalid client secret)
+
+### Resumo rápido
+- O workflow `terraform-apply` falhou na etapa **Register Azure Resource Providers** com o erro `AADSTS7000215: Invalid client secret provided` (Service Principal não autenticou).
+- Sintoma: `az login --service-principal` retornou erro de secret inválida; execução abortou antes do `terraform init`.
+- Ambiente local: Azure CLI não instalado (instalação requer sudo) e GitHub CLI sem login, então não foi possível validar secrets via CLI neste host.
+
+### Causa provável
+- `AZURE_CLIENT_SECRET` expirou/foi rotacionado ou o Service Principal foi removido na Azure; o secret armazenado no GitHub Actions ficou inconsistente.
+
+### Ações recomendadas
+1) No Azure Portal → App registrations → (Service Principal usado pelo CI) → **Certificates & secrets**: gerar um novo **Client Secret** (copiar o VALUE imediatamente).
+2) Atualizar no GitHub Actions (repo tx02) os secrets:
+  - `AZURE_CLIENT_SECRET` com o novo valor
+  - `AZURE_CREDENTIALS` se estiver usando o JSON `--sdk-auth` antigo (regere usando `az ad sp create-for-rbac --sdk-auth` ou `az ad sp credential reset --name <appId>` e substitua o JSON completo)
+3) Reexecutar `terraform-apply` após atualização dos secrets.
+
+### Observações
+- O erro ocorre antes de qualquer operação Terraform, portanto não há impacto em state ou recursos provisionados.
+- Caso necessário validar localmente: instalar Azure CLI (requer sudo) e executar `az login --service-principal -u <client_id> -p <client_secret> --tenant <tenant_id>` para confirmar.
+
+---
+
 ## 1. Variáveis Terraform Faltando (Primeiro Timeout)
 
 ### Problema
