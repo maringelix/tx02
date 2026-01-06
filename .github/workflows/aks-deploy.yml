@@ -72,6 +72,14 @@ jobs:
             --namespace=dx02 \
             --dry-run=client -o yaml | kubectl apply -f -
       
+      - name: Clean up old resources
+        run: |
+          # Delete old replicasets and HPAs that might conflict
+          kubectl delete replicaset -n dx02 --all || true
+          kubectl delete hpa -n dx02 --all || true
+          # Give time for cleanup
+          sleep 5
+      
       - name: Deploy Kubernetes manifests
         run: |
           kubectl apply -f k8s/ -n dx02
