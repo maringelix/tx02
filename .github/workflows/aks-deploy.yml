@@ -50,11 +50,16 @@ jobs:
         env:
           DB_PASSWORD: ${{ secrets.AZURE_SQL_PASSWORD }}
         run: |
-          kubectl create secret generic dx02-db-secret \
-            --from-literal=host=tx02-prd-sql.database.windows.net \
-            --from-literal=database=tx02-prd-db \
-            --from-literal=username=tx02 \
-            --from-literal=password="$DB_PASSWORD" \
+          kubectl create secret generic dx02-secrets \
+            --from-literal=db-host=tx02-prd-sql.database.windows.net \
+            --from-literal=db-name=tx02-prd-db \
+            --from-literal=db-user=tx02 \
+            --from-literal=db-password="$DB_PASSWORD" \
+            --namespace=dx02 \
+            --dry-run=client -o yaml | kubectl apply -f -
+          
+          kubectl create secret generic appinsights-config \
+            --from-literal=connection-string="" \
             --namespace=dx02 \
             --dry-run=client -o yaml | kubectl apply -f -
       

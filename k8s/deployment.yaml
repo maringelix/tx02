@@ -10,47 +10,62 @@ spec:
   selector:
     matchLabels:
       app: dx02
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
   template:
     metadata:
       labels:
         app: dx02
         tier: application
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "5000"
+        prometheus.io/path: "/metrics"
     spec:
       containers:
       - name: dx02
-        image: tx02prdacr.azurecr.io/dx02:latest
+        image: tx02prdacr.azurecr.io/dx02:main
         imagePullPolicy: Always
         ports:
-        - containerPort: 3000
+        - containerPort: 5000
           name: http
           protocol: TCP
         env:
         - name: NODE_ENV
           value: "production"
         - name: PORT
-          value: "3000"
+          value: "5000"
         - name: DB_HOST
           valueFrom:
             secretKeyRef:
-              name: dx02-db-secret
-              key: host
+              name: dx02-secrets
+              key: db-host
         - name: DB_PORT
           value: "1433"
         - name: DB_NAME
           valueFrom:
             secretKeyRef:
-              name: dx02-db-secret
-              key: database
+              name: dx02-secrets
+              key: db-name
         - name: DB_USER
           valueFrom:
             secretKeyRef:
-              name: dx02-db-secret
-              key: username
+              name: dx02-secrets
+              key: db-user
         - name: DB_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: dx02-db-secret
-              key: password
+              name: dx02-secrets
+              key: db-password
+        - name: APPINSIGHTS_CONNECTION_STRING
+          valueFrom:
+            secretKeyRef:
+              name: appinsights-config
+              key: connection-string
+              optional: true
         resources:
           requests:
             cpu: 100m
@@ -61,7 +76,7 @@ spec:
         livenessProbe:
           httpGet:
             path: /health
-            port: 3000
+            port: 5000
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5
@@ -69,21 +84,9 @@ spec:
         readinessProbe:
           httpGet:
             path: /health
-            port: 3000
+            port: 5000
           initialDelaySeconds: 10
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 3
-      imagePullSecrets:
-      - name: ghcr-secret
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: dx02-db-secret
-type: Opaque
-stringData:
-  host: tx02-prd-sql.database.windows.net
-  database: tx02-prd-db
-  username: tx02
-  password: "" # Será substituído pelo workflow
+      restartPolicy: Always
