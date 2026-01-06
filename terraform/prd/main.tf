@@ -91,10 +91,22 @@ module "acr" {
   sku           = var.acr_sku
   admin_enabled = true
 
-  # Attach ACR to AKS (grants AcrPull permission)
-  aks_principal_id = length(module.aks) > 0 ? module.aks[0].kubelet_identity_object_id : null
-
   tags = local.common_tags
+}
+
+# ACR Role Assignment - Grant AKS AcrPull permission
+resource "azurerm_role_assignment" "aks_acr_pull" {
+  count                = var.use_aks ? 1 : 0
+  principal_id         = module.aks[0].kubelet_identity_object_id
+  role_definition_name = "AcrPull"
+  scope                = module.acr[0].id
+  skip_service_principal_aad_check = true
+
+  depends_on = [module.aks, module.acr]
+
+  lifecycle {
+    ignore_changes = [skip_service_principal_aad_check]
+  }
 }
 
 # NGINX Ingress Controller Module
