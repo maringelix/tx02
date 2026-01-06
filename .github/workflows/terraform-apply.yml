@@ -1,12 +1,6 @@
 name: 🚀 Terraform Apply
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'terraform/**'
-      - '.github/workflows/terraform-apply.yml'
   workflow_dispatch:
     inputs:
       environment:
@@ -17,6 +11,10 @@ on:
         options:
           - prd
           - stg
+      confirm:
+        description: 'Type "APPLY" to confirm infrastructure changes'
+        required: true
+        type: string
 
 env:
   TF_VERSION: '1.6.0'
@@ -27,9 +25,21 @@ jobs:
     runs-on: ubuntu-latest
     
     environment:
-      name: ${{ github.event.inputs.environment || 'prd' }}
+      name: production
     
     steps:
+      - name: ⚠️ Confirm Terraform Apply
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "APPLY" ]; then
+            echo "❌ ERROR: Confirmation failed. You must type 'APPLY' to proceed."
+            echo "This workflow will CREATE/MODIFY/DESTROY Azure resources."
+            echo "Review the terraform plan before confirming."
+            exit 1
+          fi
+          echo "✅ Confirmation received. Proceeding with terraform apply..."
+          echo "⚠️  WARNING: This will modify Azure infrastructure!"
+          echo "Environment: ${{ github.event.inputs.environment || 'prd' }}"
+      
       - name: Checkout code
         uses: actions/checkout@v4
       

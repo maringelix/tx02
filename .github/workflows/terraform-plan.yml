@@ -7,6 +7,16 @@ on:
     paths:
       - 'terraform/**'
       - '.github/workflows/terraform-plan.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to plan'
+        required: true
+        default: 'prd'
+        type: choice
+        options:
+          - prd
+          - stg
 
 env:
   TF_VERSION: '1.6.0'
