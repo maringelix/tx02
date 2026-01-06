@@ -3,14 +3,20 @@ kind: Ingress
 metadata:
   name: dx02
   annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
     nginx.ingress.kubernetes.io/rewrite-target: /
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/rate-limit: "100"
     nginx.ingress.kubernetes.io/proxy-body-size: "10m"
 spec:
   ingressClassName: nginx
+  tls:
+  - hosts:
+    - dx02.ddns.net
+    secretName: dx02-tls-secret
   rules:
-  - http:
+  - host: dx02.ddns.net
+    http:
       paths:
       - path: /
         pathType: Prefix
