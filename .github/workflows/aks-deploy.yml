@@ -74,14 +74,25 @@ jobs:
       
       - name: Clean up old resources
         run: |
+          echo "=== Before cleanup - Deployments ==="
+          kubectl get deployments -n dx02 -o wide || true
+          echo "=== Before cleanup - ReplicaSets ==="
+          kubectl get replicasets -n dx02 -o wide || true
+          echo "=== Deleting all resources ==="
           # Force delete ALL resources in namespace to start completely fresh
           kubectl delete all --all -n dx02 || true
           # Give time for cleanup
           sleep 15
+          echo "=== After cleanup - Checking if clean ==="
+          kubectl get all -n dx02 || true
       
       - name: Deploy Kubernetes manifests
         run: |
+          echo "=== Applying manifests from k8s/ ==="
           kubectl apply -f k8s/ -n dx02
+          echo "=== Checking what was created ==="
+          kubectl get deployments -n dx02 -o wide
+          kubectl get replicasets -n dx02 -o wide
       
       - name: Debug - Check pods and events
         if: always()
