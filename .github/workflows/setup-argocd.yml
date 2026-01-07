@@ -126,11 +126,12 @@ jobs:
           kubectl exec -n ${{ env.ARGOCD_NAMESPACE }} deployment/argocd-server -- \
             argocd login localhost:8080 --username admin --password "$ADMIN_PASSWORD" --insecure
           
-          # Add repository
+          # Add repository (upsert to update if exists)
           kubectl exec -n ${{ env.ARGOCD_NAMESPACE }} deployment/argocd-server -- \
             argocd repo add https://github.com/${{ github.repository }}.git \
             --username ${{ github.actor }} \
             --password ${{ secrets.GITHUB_TOKEN }} \
+            --upsert \
             --insecure
           
           # Kill port-forward
