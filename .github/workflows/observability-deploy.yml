@@ -122,7 +122,7 @@ jobs:
           --values k8s/observability/prometheus-values.yaml \
           --set grafana.adminPassword="${{ secrets.GRAFANA_ADMIN_PASSWORD || 'admin' }}" \
           --set alertmanager.config.global.slack_api_url="${SLACK_WEBHOOK}" \
-          --timeout=5m
+          --timeout=15m
         
         echo "✅ Helm chart installed. Pods will start in background."
     
@@ -146,16 +146,32 @@ jobs:
       if: ${{ !inputs.destroy }}
       run: |
         echo "Waiting for Prometheus..."
-        kubectl wait --for=condition=ready pod \
+        if ! kubectl wait --for=condition=ready pod \
           -l app.kubernetes.io/name=prometheus \
           -n monitoring \
-          --timeout=300s
+          --timeout=900s; then
+          echo "❌ Prometheus not ready after timeout. Dumping diagnostics..."
+          kubectl get pods -n monitoring -o wide || true
+          echo "--- Describe Prometheus pods ---" || true
+          kubectl describe pod -l app.kubernetes.io/name=prometheus -n monitoring || true
+          echo "--- Recent events (monitoring) ---" || true
+          kubectl get events -n monitoring --sort-by=.lastTimestamp | tail -n 100 || true
+          exit 1
+        fi
         
         echo "Waiting for Grafana..."
-        kubectl wait --for=condition=ready pod \
+        if ! kubectl wait --for=condition=ready pod \
           -l app.kubernetes.io/name=grafana \
           -n monitoring \
-          --timeout=300s
+          --timeout=600s; then
+          echo "❌ Grafana not ready after timeout. Dumping diagnostics..."
+          kubectl get pods -n monitoring -o wide || true
+          echo "--- Describe Grafana pods ---" || true
+          kubectl describe pod -l app.kubernetes.io/name=grafana -n monitoring || true
+          echo "--- Recent events (monitoring) ---" || true
+          kubectl get events -n monitoring --sort-by=.lastTimestamp | tail -n 100 || true
+          exit 1
+        fi
         
         echo "All pods ready!"
     

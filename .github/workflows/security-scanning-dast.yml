@@ -102,6 +102,7 @@ jobs:
         issue_title: 'ZAP Baseline Scan Findings'
         token: ${{ secrets.GITHUB_TOKEN }}
         fail_action: false  # Don't fail pipeline on findings
+        artifact_name: zap-dast-report
     
     # ============================================================
     # OWASP ZAP Full Scan (Comprehensive, for scheduled runs)
@@ -116,6 +117,7 @@ jobs:
         issue_title: 'ZAP Full Scan Findings'
         token: ${{ secrets.GITHUB_TOKEN }}
         fail_action: false
+        artifact_name: zap-dast-report
     
     # ============================================================
     # OWASP ZAP API Scan (For REST API endpoints)
@@ -130,6 +132,7 @@ jobs:
         issue_title: 'ZAP API Scan Findings'
         token: ${{ secrets.GITHUB_TOKEN }}
         fail_action: false
+        artifact_name: zap-dast-report
     
     # ============================================================
     # Upload scan results
@@ -185,7 +188,7 @@ jobs:
         
         echo "### 📊 Review Results" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "1. **Artifacts**: Download \`zap-scan-report-${{ github.run_number }}\` from workflow artifacts" >> $GITHUB_STEP_SUMMARY
+        echo "1. **Artifacts**: Download zap-dast-report from workflow artifacts" >> $GITHUB_STEP_SUMMARY
         echo "2. **Issues**: Check Issues tab for \`ZAP Scan Findings\` label" >> $GITHUB_STEP_SUMMARY
         echo "3. **Reports**: HTML, JSON, and Markdown reports available" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
