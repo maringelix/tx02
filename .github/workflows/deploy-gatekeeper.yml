@@ -86,6 +86,9 @@ jobs:
         if: github.event.inputs.action == 'install'
         run: |
           echo "🧹 Cleaning up any previous Gatekeeper installation..."
+
+          # Remove potential conflicting ServiceAccount from previous installs
+          kubectl delete serviceaccount gatekeeper-admin -n gatekeeper-system --ignore-not-found=true || true
           
           # Delete namespace (will hang if resources aren't cleaned)
           kubectl delete namespace gatekeeper-system --ignore-not-found=true --timeout=30s || true
@@ -298,8 +301,16 @@ jobs:
           kubectl get constrainttemplates
           echo ""
           
+          echo "🔹 Constraint API resources:"
+          kubectl api-resources --api-group=constraints.gatekeeper.sh || echo "No constraint APIs"
+          echo ""
+
           echo "🔹 Constraints:"
-          kubectl get constraints --all-namespaces
+          if kubectl api-resources --api-group=constraints.gatekeeper.sh --no-headers | grep -q constraints; then
+            kubectl get constraints --all-namespaces || echo "No constraints found"
+          else
+            echo "Constraints CRD not installed (likely because policies were not applied)"
+          fi
           echo ""
           
           echo "🔹 Services:"
@@ -355,7 +366,11 @@ jobs:
             
             echo "### 🔒 Constraints" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
-            kubectl get constraints --all-namespaces >> $GITHUB_STEP_SUMMARY 2>&1 || echo "No constraints" >> $GITHUB_STEP_SUMMARY
+            if kubectl api-resources --api-group=constraints.gatekeeper.sh --no-headers | grep -q constraints; then
+              kubectl get constraints --all-namespaces >> $GITHUB_STEP_SUMMARY 2>&1 || echo "No constraints" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "Constraints CRD not installed (likely because no templates were applied)" >> $GITHUB_STEP_SUMMARY
+            fi
             echo '```' >> $GITHUB_STEP_SUMMARY
           else
             echo "### ✅ Uninstall Complete" >> $GITHUB_STEP_SUMMARY
