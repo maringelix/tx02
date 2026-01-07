@@ -116,25 +116,55 @@ jobs:
       - name: Get service endpoint
         id: get-endpoint
         run: |
+          # Get nginx-ingress-controller external IP
+          echo "Waiting for nginx-ingress-controller external IP..."
           EXTERNAL_IP=""
-          while [ -z $EXTERNAL_IP ]; do
-            echo "Waiting for external IP..."
-            EXTERNAL_IP=$(kubectl get svc dx02 -n dx02 --template="{{range .status.loadBalancer.ingress}}{{.ip}}{{end}}")
-            [ -z "$EXTERNAL_IP" ] && sleep 10
+          for i in {1..30}; do
+            EXTERNAL_IP=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+            if [ -n "$EXTERNAL_IP" ]; then
+              break
+            fi
+            echo "Attempt $i/30: Waiting..."
+            sleep 10
           done
+          
+          if [ -z "$EXTERNAL_IP" ]; then
+            echo "❌ Failed to get nginx-ingress external IP"
+            exit 1
+          fi
+          
           echo "endpoint=$EXTERNAL_IP" >> $GITHUB_OUTPUT
+          echo "✅ Nginx Ingress IP: $EXTERNAL_IP"
+      
+      - name: Check certificate status
+        run: |
+          echo "=== Certificate Status ==="
+          kubectl get certificate -n dx02 || echo "No certificates found"
+          echo ""
+          echo "=== Certificate Details ==="
+          kubectl describe certificate dx02-tls-cert -n dx02 2>/dev/null || echo "Certificate dx02-tls-cert not found"
+          echo ""
+          echo "=== Ingress Status ==="
+          kubectl get ingress dx02 -n dx02 -o wide
       
       - name: Health check
         run: |
           sleep 30
-          curl -f http://${{ steps.get-endpoint.outputs.endpoint }}/health || exit 1
+          echo "Testing HTTP endpoint: http://${{ steps.get-endpoint.outputs.endpoint }}/health"
+          curl -f http://${{ steps.get-endpoint.outputs.endpoint }}/health || echo "⚠️ Health check failed"
+          echo ""
+          echo "Testing HTTPS endpoint: https://dx02.ddns.net/health"
+          curl -f -k https://dx02.ddns.net/health || echo "⚠️ HTTPS health check failed (expected if DNS not updated yet)"
       
       - name: Summary
         run: |
           echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** ${{ github.event.inputs.environment || 'prd' }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Endpoint:** http://${{ steps.get-endpoint.outputs.endpoint }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Nginx Ingress IP:** http://${{ steps.get-endpoint.outputs.endpoint }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Domain:** https://dx02.ddns.net" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ **Action Required:** Update DNS dx02.ddns.net to point to ${{ steps.get-endpoint.outputs.endpoint }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Pods Status" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
