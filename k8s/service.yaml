@@ -5,10 +5,10 @@ metadata:
   labels:
     app: dx02
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   ports:
   - port: 80
-    targetPort: 3000
+    targetPort: 5000
     protocol: TCP
     name: http
   selector:
