@@ -682,7 +682,7 @@ jobs:
           az network application-gateway address-pool update \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --gateway-name ${{ env.APP_GATEWAY_NAME }} \
-            --name appGatewayBackendPool \
+            --name defaultaddresspool \
             --servers ${{ steps.get-nodes.outputs.node_ips }}
           
           echo "✅ Backend pool updated with node IPs"
@@ -693,7 +693,7 @@ jobs:
           az network application-gateway http-settings update \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --gateway-name ${{ env.APP_GATEWAY_NAME }} \
-            --name appGatewayBackendHttpSettings \
+            --name defaulthttpsetting \
             --port ${{ steps.get-nodeports.outputs.http_nodeport }} \
             --protocol Http \
             --timeout 30
@@ -723,7 +723,7 @@ jobs:
           az network application-gateway http-settings update \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --gateway-name ${{ env.APP_GATEWAY_NAME }} \
-            --name appGatewayBackendHttpSettings \
+            --name defaulthttpsetting \
             --probe dx02-health-probe
           
           echo "✅ Health probe associated"
@@ -962,7 +962,12 @@ jobs:
             --protocol Https \
             --timeout 30 \
             --probe dx02-https-probe \
-            || echo "⚠️ HTTPS backend settings may already exist"
+            || az network application-gateway http-settings update \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --gateway-name ${{ env.APP_GATEWAY_NAME }} \
+              --name httpsBackendSettings \
+              --port ${{ steps.get-https-nodeport.outputs.https_nodeport }} \
+              --probe dx02-https-probe
           
           echo "✅ HTTPS backend settings created"
 
@@ -982,7 +987,7 @@ jobs:
               --gateway-name ${{ env.APP_GATEWAY_NAME }} \
               --name httpsRule \
               --http-listener httpsListener \
-              --address-pool appGatewayBackendPool \
+              --address-pool defaultaddresspool \
               --http-settings httpsBackendSettings \
               --priority 200
           else
@@ -992,7 +997,7 @@ jobs:
               --gateway-name ${{ env.APP_GATEWAY_NAME }} \
               --name httpsRule \
               --http-listener httpsListener \
-              --address-pool appGatewayBackendPool \
+              --address-pool defaultaddresspool \
               --http-settings httpsBackendSettings \
               --priority 200
           fi
