@@ -804,23 +804,52 @@ jobs:
           echo "✅ Certificate converted to PFX"
           ls -lh dx02-tls.pfx
 
-      - name: 📤 Upload Certificate to Application Gateway
+      - name: �️ Remove Existing Self-Signed Certificate (if exists)
         run: |
-          echo "📤 Uploading SSL certificate to Application Gateway..."
+          echo "🗑️ Checking for existing self-signed certificate..."
+          if az network application-gateway ssl-cert show \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --gateway-name ${{ env.APP_GATEWAY_NAME }} \
+            --name dx02-ssl-cert &>/dev/null; then
+            
+            echo "⚠️ Found existing certificate, removing..."
+            # First, we need to check if listener is using this cert
+            LISTENER_EXISTS=$(az network application-gateway http-listener show \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --gateway-name ${{ env.APP_GATEWAY_NAME }} \
+              --name httpsListener 2>/dev/null || echo "")
+            
+            if [ ! -z "$LISTENER_EXISTS" ]; then
+              echo "📋 Updating listener to remove cert reference temporarily..."
+              # Delete and recreate listener without cert
+              az network application-gateway http-listener delete \
+                --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+                --gateway-name ${{ env.APP_GATEWAY_NAME }} \
+                --name httpsListener
+            fi
+            
+            # Now delete the certificate
+            az network application-gateway ssl-cert delete \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --gateway-name ${{ env.APP_GATEWAY_NAME }} \
+              --name dx02-ssl-cert
+            
+            echo "✅ Old certificate removed"
+          else
+            echo "✅ No existing certificate to remove"
+          fi
+
+      - name: 📤 Upload Let's Encrypt Certificate to Application Gateway
+        run: |
+          echo "📤 Uploading Let's Encrypt SSL certificate to Application Gateway..."
           az network application-gateway ssl-cert create \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --gateway-name ${{ env.APP_GATEWAY_NAME }} \
             --name dx02-ssl-cert \
             --cert-file dx02-tls.pfx \
-            --cert-password "${{ secrets.CERT_PASSWORD }}" \
-            || az network application-gateway ssl-cert update \
-              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-              --gateway-name ${{ env.APP_GATEWAY_NAME }} \
-              --name dx02-ssl-cert \
-              --cert-file dx02-tls.pfx \
-              --cert-password "${{ secrets.CERT_PASSWORD }}"
+            --cert-password "${{ secrets.CERT_PASSWORD }}"
           
-          echo "✅ SSL certificate uploaded"
+          echo "✅ Let's Encrypt SSL certificate uploaded successfully"
 
       - name: 🧹 Cleanup temporary files
         if: always()
@@ -873,9 +902,27 @@ jobs:
           
           echo "✅ Frontend port 443 ready"
 
-      - name: 🔊 Create HTTPS Listener
+      - name: 🔊 Create or Update HTTPS Listener
         run: |
           echo "🔊 Creating HTTPS listener..."
+          
+          # Check if port443 exists, create if not
+          if ! az network application-gateway frontend-port show \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --gateway-name ${{ env.APP_GATEWAY_NAME }} \
+            --name port443 &>/dev/null; then
+            
+            az network application-gateway frontend-port create \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --gateway-name ${{ env.APP_GATEWAY_NAME }} \
+              --name port443 \
+              --port 443
+            echo "✅ Frontend port 443 created"
+          else
+            echo "✅ Frontend port 443 already exists"
+          fi
+          
+          # Create HTTPS listener with Let's Encrypt certificate
           az network application-gateway http-listener create \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --gateway-name ${{ env.APP_GATEWAY_NAME }} \
@@ -883,10 +930,9 @@ jobs:
             --frontend-port port443 \
             --frontend-ip appGatewayFrontendIP \
             --ssl-cert dx02-ssl-cert \
-            --host-name ${{ github.event.inputs.domain_name }} \
-            || echo "⚠️ HTTPS listener may already exist"
+            --host-name ${{ github.event.inputs.domain_name }}
           
-          echo "✅ HTTPS listener created"
+          echo "✅ HTTPS listener created with Let's Encrypt certificate"
 
       - name: 🏥 Create HTTPS Health Probe
         run: |
@@ -920,20 +966,38 @@ jobs:
           
           echo "✅ HTTPS backend settings created"
 
-      - name: 🔀 Create HTTPS Routing Rule
+      - name: 🔀 Create or Update HTTPS Routing Rule
         run: |
           echo "🔀 Creating HTTPS routing rule..."
-          az network application-gateway rule create \
+          
+          # Check if rule exists
+          if az network application-gateway rule show \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --gateway-name ${{ env.APP_GATEWAY_NAME }} \
-            --name httpsRule \
-            --http-listener httpsListener \
-            --address-pool appGatewayBackendPool \
-            --http-settings httpsBackendSettings \
-            --priority 200 \
-            || echo "⚠️ HTTPS routing rule may already exist"
+            --name httpsRule &>/dev/null; then
+            
+            echo "⚠️ Rule exists, updating..."
+            az network application-gateway rule update \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --gateway-name ${{ env.APP_GATEWAY_NAME }} \
+              --name httpsRule \
+              --http-listener httpsListener \
+              --address-pool appGatewayBackendPool \
+              --http-settings httpsBackendSettings \
+              --priority 200
+          else
+            echo "📋 Creating new rule..."
+            az network application-gateway rule create \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --gateway-name ${{ env.APP_GATEWAY_NAME }} \
+              --name httpsRule \
+              --http-listener httpsListener \
+              --address-pool appGatewayBackendPool \
+              --http-settings httpsBackendSettings \
+              --priority 200
+          fi
           
-          echo "✅ HTTPS routing rule created"
+          echo "✅ HTTPS routing rule configured"
 
   validate-deployment:
     name: ✅ Validate Application Gateway Deployment
