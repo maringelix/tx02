@@ -890,32 +890,20 @@ jobs:
           echo "https_nodeport=$HTTPS_NODEPORT" >> $GITHUB_OUTPUT
           echo "✅ HTTPS NodePort: $HTTPS_NODEPORT"
 
-      - name: 🔌 Create Frontend Port 443
-        run: |
-          echo "🔌 Creating frontend port 443..."
-          az network application-gateway frontend-port create \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --gateway-name ${{ env.APP_GATEWAY_NAME }} \
-            --name port443 \
-            --port 443 \
-            || echo "⚠️ Port 443 may already exist"
-          
-          echo "✅ Frontend port 443 ready"
-
-      - name: 🔊 Create or Update HTTPS Listener
+      - name:  Create or Update HTTPS Listener
         run: |
           echo "🔊 Creating HTTPS listener..."
           
-          # Check if port443 exists, create if not
+          # Check if httpsPort exists, create if not
           if ! az network application-gateway frontend-port show \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --gateway-name ${{ env.APP_GATEWAY_NAME }} \
-            --name port443 &>/dev/null; then
+            --name httpsPort &>/dev/null; then
             
             az network application-gateway frontend-port create \
               --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
               --gateway-name ${{ env.APP_GATEWAY_NAME }} \
-              --name port443 \
+              --name httpsPort \
               --port 443
             echo "✅ Frontend port 443 created"
           else
@@ -927,7 +915,12 @@ jobs:
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --gateway-name ${{ env.APP_GATEWAY_NAME }} \
             --name httpsListener \
-            --frontend-port port443 \
+            --frontend-port httpsPort \
+            --frontend-ip appGatewayFrontendIP \
+            --ssl-cert dx02-ssl-cert \
+            --host-name ${{ github.event.inputs.domain_name }}
+          
+          echo "✅ HTTPS listener created with Let's Encrypt certificate"
             --frontend-ip appGatewayFrontendIP \
             --ssl-cert dx02-ssl-cert \
             --host-name ${{ github.event.inputs.domain_name }}
