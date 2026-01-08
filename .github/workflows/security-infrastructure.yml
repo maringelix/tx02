@@ -921,11 +921,6 @@ jobs:
             --host-name ${{ github.event.inputs.domain_name }}
           
           echo "✅ HTTPS listener created with Let's Encrypt certificate"
-            --frontend-ip appGatewayFrontendIP \
-            --ssl-cert dx02-ssl-cert \
-            --host-name ${{ github.event.inputs.domain_name }}
-          
-          echo "✅ HTTPS listener created with Let's Encrypt certificate"
 
       - name: 🏥 Create HTTPS Health Probe
         run: |
