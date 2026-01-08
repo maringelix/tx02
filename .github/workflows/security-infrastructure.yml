@@ -336,12 +336,15 @@ jobs:
         if: steps.check-appgw.outputs.exists == 'false' && steps.check-ip-strategy.outputs.reuse_ip == 'true'
         run: |
           echo "🔄 Converting NGINX Ingress from LoadBalancer to NodePort..."
+          echo "⚠️  This will release the public IP so Application Gateway can use it"
           
           # Patch NGINX Ingress service to NodePort type
+          # This will delete the LoadBalancer and release the public IP
           kubectl patch svc ingress-nginx-controller -n ingress-nginx -p '{"spec":{"type":"NodePort"}}'
           
-          # Wait a few seconds for the change to take effect
-          sleep 10
+          # Wait for the LoadBalancer to be deleted and IP to be released
+          echo "⏳ Waiting 60 seconds for LoadBalancer to be deleted and IP to be released..."
+          sleep 60
           
           # Verify the change
           SVC_TYPE=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.spec.type}')
@@ -354,6 +357,59 @@ jobs:
           echo "NodePorts: HTTP=$HTTP_NODEPORT, HTTPS=$HTTPS_NODEPORT"
           echo "http_nodeport=$HTTP_NODEPORT" >> $GITHUB_OUTPUT
           echo "https_nodeport=$HTTPS_NODEPORT" >> $GITHUB_OUTPUT
+          
+          # Verify IP is released
+          echo "🔍 Verifying public IP status..."
+          PUBLIC_IP_NAME="${{ steps.check-ip-strategy.outputs.ip_name }}"
+          PUBLIC_IP_RG="${{ steps.check-ip-strategy.outputs.ip_resource_group }}"
+          
+          IP_CONFIG=$(az network public-ip show \
+            --name $PUBLIC_IP_NAME \
+            --resource-group $PUBLIC_IP_RG \
+            --query ipConfiguration -o tsv 2>/dev/null || echo "")
+          
+          if [ -z "$IP_CONFIG" ] || [ "$IP_CONFIG" == "null" ]; then
+            echo "✅ Public IP is released and available for Application Gateway"
+          else
+            echo "⚠️  Public IP still associated, waiting additional 30 seconds..."
+            sleep 30
+          fi
+
+      - name: 🔄 Move Public IP to Application Gateway Resource Group (if reusing)
+        id: move-public-ip
+        if: steps.check-appgw.outputs.exists == 'false' && steps.check-ip-strategy.outputs.reuse_ip == 'true'
+        run: |
+          echo "🔄 Moving Public IP to Application Gateway resource group..."
+          
+          PUBLIC_IP_NAME="${{ steps.check-ip-strategy.outputs.ip_name }}"
+          SOURCE_RG="${{ steps.check-ip-strategy.outputs.ip_resource_group }}"
+          TARGET_RG="${{ env.AZURE_RESOURCE_GROUP }}"
+          
+          if [ "$SOURCE_RG" != "$TARGET_RG" ]; then
+            echo "Moving $PUBLIC_IP_NAME from $SOURCE_RG to $TARGET_RG..."
+            
+            # Get the public IP resource ID
+            IP_RESOURCE_ID=$(az network public-ip show \
+              --name $PUBLIC_IP_NAME \
+              --resource-group $SOURCE_RG \
+              --query id -o tsv)
+            
+            # Move the resource
+            az resource move \
+              --ids $IP_RESOURCE_ID \
+              --destination-group $TARGET_RG
+            
+            echo "✅ Public IP moved to $TARGET_RG"
+            
+            # Wait for move to complete
+            sleep 10
+            
+            # Update the resource group in outputs
+            echo "ip_resource_group=$TARGET_RG" >> $GITHUB_OUTPUT
+          else
+            echo "✅ Public IP already in correct resource group"
+            echo "ip_resource_group=$SOURCE_RG" >> $GITHUB_OUTPUT
+          fi
 
       - name: 🌐 Create New Public IP for Application Gateway
         id: create-new-ip
@@ -395,11 +451,15 @@ jobs:
             echo "ip_name=${{ steps.create-new-ip.outputs.ip_name }}" >> $GITHUB_OUTPUT
             echo "ip_resource_group=${{ steps.create-new-ip.outputs.ip_resource_group }}" >> $GITHUB_OUTPUT
           elif [ "${{ steps.check-ip-strategy.outputs.strategy }}" == "reuse_nginx" ]; then
-            echo "Using NGINX Ingress public IP"
+            echo "Using NGINX Ingress public IP (moved to Application Gateway RG)"
+            # Use the updated resource group from the move step
+            UPDATED_RG="${{ steps.move-public-ip.outputs.ip_resource_group }}"
+            if [ -z "$UPDATED_RG" ]; then
+              UPDATED_RG="${{ env.AZURE_RESOURCE_GROUP }}"
+            fi
             echo "ip_address=${{ steps.check-ip-strategy.outputs.ip_address }}" >> $GITHUB_OUTPUT
             echo "ip_name=${{ steps.check-ip-strategy.outputs.ip_name }}" >> $GITHUB_OUTPUT
-            echo "ip_resource_group=${{ steps.check-ip-strategy.outputs.ip_resource_group }}" >> $GITHUB_OUTPUT
-            echo "ip_id=${{ steps.check-ip-strategy.outputs.ip_id }}" >> $GITHUB_OUTPUT
+            echo "ip_resource_group=$UPDATED_RG" >> $GITHUB_OUTPUT
           fi
           
           echo "✅ Public IP determined:"
@@ -448,18 +508,12 @@ jobs:
           PUBLIC_IP_NAME="${{ steps.get-ip.outputs.ip_name }}"
           PUBLIC_IP_RG="${{ steps.get-ip.outputs.ip_resource_group }}"
           
-          # Get Public IP ID with correct resource group
-          if [ "${{ steps.check-ip-strategy.outputs.strategy }}" == "reuse_nginx" ]; then
-            # Use the full resource ID from the check step
-            PUBLIC_IP_ID="${{ steps.check-ip-strategy.outputs.ip_id }}"
-            echo "🔗 Reusing NGINX Ingress Public IP ID: $PUBLIC_IP_ID"
-          else
-            PUBLIC_IP_ID=$(az network public-ip show \
-              --resource-group $PUBLIC_IP_RG \
-              --name $PUBLIC_IP_NAME \
-              --query id -o tsv)
-            echo "🔗 Using new Public IP ID: $PUBLIC_IP_ID"
-          fi
+          # Get Public IP ID from the correct resource group
+          PUBLIC_IP_ID=$(az network public-ip show \
+            --resource-group $PUBLIC_IP_RG \
+            --name $PUBLIC_IP_NAME \
+            --query id -o tsv)
+          echo "🔗 Public IP ID: $PUBLIC_IP_ID"
           
           # Get WAF Policy ID if SKU is WAF_v2
           if [ "${{ github.event.inputs.app_gateway_sku }}" == "WAF_v2" ]; then
