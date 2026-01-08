@@ -260,13 +260,107 @@ jobs:
             echo "✅ Subnet created"
           fi
 
-      - name: 🌐 Create Public IP for Application Gateway
-        id: get-ip
+      - name: 🌐 Check Public IP Availability and Determine Strategy
+        id: check-ip-strategy
         if: steps.check-appgw.outputs.exists == 'false'
         run: |
-          echo "🌐 Creating Public IP for Application Gateway..."
+          echo "🌐 Checking public IP availability..."
           
-          # Create new Public IP for Application Gateway
+          # Get AKS managed resource group
+          AKS_MC_RG=$(az aks show \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.AKS_CLUSTER_NAME }} \
+            --query nodeResourceGroup -o tsv)
+          
+          echo "AKS Managed Resource Group: $AKS_MC_RG"
+          
+          # Count existing public IPs in the region
+          TOTAL_IPS=$(az network public-ip list \
+            --query "[?location=='${{ env.LOCATION }}'] | length(@)" -o tsv)
+          
+          echo "Existing Public IPs in ${{ env.LOCATION }}: $TOTAL_IPS"
+          
+          # Azure Free Trial limit is 3 public IPs per region
+          IP_LIMIT=3
+          
+          if [ $TOTAL_IPS -lt $IP_LIMIT ]; then
+            echo "✅ Public IP quota available ($TOTAL_IPS/$IP_LIMIT)"
+            echo "strategy=create_new" >> $GITHUB_OUTPUT
+            echo "reuse_ip=false" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️  Public IP limit reached ($TOTAL_IPS/$IP_LIMIT)"
+            echo "🔍 Looking for NGINX Ingress LoadBalancer IP to reuse..."
+            
+            # Get NGINX Ingress LoadBalancer service
+            NGINX_SVC=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o json 2>/dev/null || echo "{}")
+            NGINX_IP=$(echo "$NGINX_SVC" | jq -r '.status.loadBalancer.ingress[0].ip // empty')
+            
+            if [ -n "$NGINX_IP" ] && [ "$NGINX_IP" != "null" ]; then
+              echo "✅ Found NGINX Ingress IP: $NGINX_IP"
+              
+              # Find the public IP resource for this IP address
+              PUBLIC_IP_INFO=$(az network public-ip list \
+                --query "[?ipAddress=='$NGINX_IP'] | [0].{name:name, resourceGroup:resourceGroup, id:id}" -o json)
+              
+              PUBLIC_IP_NAME=$(echo "$PUBLIC_IP_INFO" | jq -r '.name // empty')
+              PUBLIC_IP_RG=$(echo "$PUBLIC_IP_INFO" | jq -r '.resourceGroup // empty')
+              PUBLIC_IP_ID=$(echo "$PUBLIC_IP_INFO" | jq -r '.id // empty')
+              
+              if [ -n "$PUBLIC_IP_NAME" ] && [ "$PUBLIC_IP_NAME" != "null" ]; then
+                echo "✅ Found Public IP resource: $PUBLIC_IP_NAME"
+                echo "   Resource Group: $PUBLIC_IP_RG"
+                echo "   IP Address: $NGINX_IP"
+                echo ""
+                echo "📋 Strategy: Reuse NGINX Ingress public IP for Application Gateway"
+                echo "⚠️  Note: NGINX Ingress will need to be reconfigured to NodePort type"
+                
+                echo "strategy=reuse_nginx" >> $GITHUB_OUTPUT
+                echo "reuse_ip=true" >> $GITHUB_OUTPUT
+                echo "ip_address=$NGINX_IP" >> $GITHUB_OUTPUT
+                echo "ip_name=$PUBLIC_IP_NAME" >> $GITHUB_OUTPUT
+                echo "ip_resource_group=$PUBLIC_IP_RG" >> $GITHUB_OUTPUT
+                echo "ip_id=$PUBLIC_IP_ID" >> $GITHUB_OUTPUT
+              else
+                echo "❌ Could not find public IP resource for $NGINX_IP"
+                echo "strategy=failed" >> $GITHUB_OUTPUT
+                exit 1
+              fi
+            else
+              echo "❌ Could not find NGINX Ingress LoadBalancer IP"
+              echo "strategy=failed" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+          fi
+
+      - name: 🔄 Convert NGINX Ingress to NodePort (if reusing IP)
+        if: steps.check-appgw.outputs.exists == 'false' && steps.check-ip-strategy.outputs.reuse_ip == 'true'
+        run: |
+          echo "🔄 Converting NGINX Ingress from LoadBalancer to NodePort..."
+          
+          # Patch NGINX Ingress service to NodePort type
+          kubectl patch svc ingress-nginx-controller -n ingress-nginx -p '{"spec":{"type":"NodePort"}}'
+          
+          # Wait a few seconds for the change to take effect
+          sleep 10
+          
+          # Verify the change
+          SVC_TYPE=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.spec.type}')
+          echo "✅ NGINX Ingress service type: $SVC_TYPE"
+          
+          # Get NodePorts
+          HTTP_NODEPORT=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}')
+          HTTPS_NODEPORT=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.spec.ports[?(@.name=="https")].nodePort}')
+          
+          echo "NodePorts: HTTP=$HTTP_NODEPORT, HTTPS=$HTTPS_NODEPORT"
+          echo "http_nodeport=$HTTP_NODEPORT" >> $GITHUB_OUTPUT
+          echo "https_nodeport=$HTTPS_NODEPORT" >> $GITHUB_OUTPUT
+
+      - name: 🌐 Create New Public IP for Application Gateway
+        id: create-new-ip
+        if: steps.check-appgw.outputs.exists == 'false' && steps.check-ip-strategy.outputs.strategy == 'create_new'
+        run: |
+          echo "🌐 Creating new Public IP for Application Gateway..."
+          
           az network public-ip create \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --name ${{ env.APP_GATEWAY_NAME }}-pip \
@@ -282,12 +376,35 @@ jobs:
           
           echo "ip_address=$IP_ADDRESS" >> $GITHUB_OUTPUT
           echo "ip_name=${{ env.APP_GATEWAY_NAME }}-pip" >> $GITHUB_OUTPUT
+          echo "ip_resource_group=${{ env.AZURE_RESOURCE_GROUP }}" >> $GITHUB_OUTPUT
           
           echo "✅ Public IP created:"
           echo "   Name: ${{ env.APP_GATEWAY_NAME }}-pip"
           echo "   IP: $IP_ADDRESS"
           echo ""
-          echo "⚠️  IMPORTANTE: Atualize seu DNS dx02.ddns.net para este novo IP: $IP_ADDRESS"
+          echo "⚠️  IMPORTANTE: Update DNS dx02.ddns.net to new IP: $IP_ADDRESS"
+
+      - name: 📋 Set Public IP for Application Gateway
+        id: get-ip
+        if: steps.check-appgw.outputs.exists == 'false'
+        run: |
+          # Determine which IP to use based on strategy
+          if [ "${{ steps.check-ip-strategy.outputs.strategy }}" == "create_new" ]; then
+            echo "Using newly created public IP"
+            echo "ip_address=${{ steps.create-new-ip.outputs.ip_address }}" >> $GITHUB_OUTPUT
+            echo "ip_name=${{ steps.create-new-ip.outputs.ip_name }}" >> $GITHUB_OUTPUT
+            echo "ip_resource_group=${{ steps.create-new-ip.outputs.ip_resource_group }}" >> $GITHUB_OUTPUT
+          elif [ "${{ steps.check-ip-strategy.outputs.strategy }}" == "reuse_nginx" ]; then
+            echo "Using NGINX Ingress public IP"
+            echo "ip_address=${{ steps.check-ip-strategy.outputs.ip_address }}" >> $GITHUB_OUTPUT
+            echo "ip_name=${{ steps.check-ip-strategy.outputs.ip_name }}" >> $GITHUB_OUTPUT
+            echo "ip_resource_group=${{ steps.check-ip-strategy.outputs.ip_resource_group }}" >> $GITHUB_OUTPUT
+            echo "ip_id=${{ steps.check-ip-strategy.outputs.ip_id }}" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "✅ Public IP determined:"
+          echo "   Strategy: ${{ steps.check-ip-strategy.outputs.strategy }}"
+          echo "   IP Address: ${{ steps.check-ip-strategy.outputs.ip_address || steps.create-new-ip.outputs.ip_address }}"
 
       - name: 🛡️ Create WAF Policy (before Application Gateway)
         if: steps.check-appgw.outputs.exists == 'false' && github.event.inputs.app_gateway_sku == 'WAF_v2'
@@ -317,6 +434,7 @@ jobs:
           echo "🛡️ Creating Application Gateway with WAF..."
           echo "SKU: ${{ github.event.inputs.app_gateway_sku }}"
           echo "WAF Mode: ${{ github.event.inputs.waf_mode }}"
+          echo "Strategy: ${{ steps.check-ip-strategy.outputs.strategy }}"
           
           # Get subnet ID
           SUBNET_ID=$(az network vnet subnet show \
@@ -325,15 +443,23 @@ jobs:
             --name ${{ env.APP_GATEWAY_SUBNET }} \
             --query id -o tsv)
           
-          # Use Public IP created in previous step
+          # Use Public IP determined from previous steps
           echo "🔗 Using Public IP: ${{ steps.get-ip.outputs.ip_address }}"
           PUBLIC_IP_NAME="${{ steps.get-ip.outputs.ip_name }}"
+          PUBLIC_IP_RG="${{ steps.get-ip.outputs.ip_resource_group }}"
           
-          # Get Public IP ID
-          PUBLIC_IP_ID=$(az network public-ip show \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --name $PUBLIC_IP_NAME \
-            --query id -o tsv)
+          # Get Public IP ID with correct resource group
+          if [ "${{ steps.check-ip-strategy.outputs.strategy }}" == "reuse_nginx" ]; then
+            # Use the full resource ID from the check step
+            PUBLIC_IP_ID="${{ steps.check-ip-strategy.outputs.ip_id }}"
+            echo "🔗 Reusing NGINX Ingress Public IP ID: $PUBLIC_IP_ID"
+          else
+            PUBLIC_IP_ID=$(az network public-ip show \
+              --resource-group $PUBLIC_IP_RG \
+              --name $PUBLIC_IP_NAME \
+              --query id -o tsv)
+            echo "🔗 Using new Public IP ID: $PUBLIC_IP_ID"
+          fi
           
           # Get WAF Policy ID if SKU is WAF_v2
           if [ "${{ github.event.inputs.app_gateway_sku }}" == "WAF_v2" ]; then
@@ -363,7 +489,7 @@ jobs:
             --http-settings-protocol Http \
             --priority 100 \
             $WAF_POLICY_ARG \
-            --tags Environment=${{ github.event.inputs.environment }} ManagedBy=GitHub-Actions
+            --tags Environment=${{ github.event.inputs.environment }} ManagedBy=GitHub-Actions Strategy=${{ steps.check-ip-strategy.outputs.strategy }}
           
           echo "✅ Application Gateway created"
 
