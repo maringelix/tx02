@@ -1,4 +1,4 @@
-# TX02 - Infraestrutura Azure com Terraform e CI/CD
+# TX02 - Infraestrutura Azure com Terraform e CI/CD, last run in 2026.
 
 🎉 **Infraestrutura de produção completa na Azure com AKS Kubernetes, Azure SQL Database, networking, e CI/CD totalmente automatizado - 100% otimizado para Azure Free Trial ($0.00/mês).**
 
